@@ -2,8 +2,14 @@
 #include <vector>
 
 int main() {
-    // Hardcoded 10-element vector
-    std::vector<int> numbers = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+    // Declare a 10-element vector
+    std::vector<int> numbers(10);
+
+    // Take input from the user
+    std::cout << "Enter 10 integers: ";
+    for (int i = 0; i < 10; ++i) {
+        std::cin >> numbers[i];
+    }
 
     // Print the vector elements to the screen
     std::cout << "Vector elements: ";
