@@ -34,3 +34,9 @@
 # Debug files
 *.ilk
 *.pdb
+
+# Excel Files
+.xls
+.csv
+CodeForces_tools/Gyroscope.csv
+CodeForces_tools/Gyroscope.xls
