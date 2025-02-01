@@ -22,6 +22,13 @@ vector<vector<string>> readCSV(const string &filename) {
     }
 
     string line;
+    
+    // Check if the file is empty
+    if (!getline(file, line)) {  
+        cerr << "Error: File is empty." << endl;
+        return data;
+    }
+
     // Read the file line by line
     while (getline(file, line)) {
         vector<string> row;  // Vector to store one row of the CSV
