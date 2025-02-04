@@ -111,6 +111,28 @@ vector<string> getColumnDataTypes(const vector<vector<string>> &data) {
     return dataTypes;
 }
 
+//jasdeepbajaj
+vector<int> countMissingValues(const vector<vector<string>> &data) {
+    vector<int> missingCounts;
+
+    if (data.empty()) return missingCounts;  // Return empty if no data
+
+    int numColumns = data[0].size();
+    missingCounts.resize(numColumns, 0);  // Initialize counts to 0 for each column
+
+    // Iterate over each row in the data
+    for (const auto &row : data) {
+        for (int col = 0; col < numColumns; col++) {
+            // If a cell is empty, increment the count for that column
+            if (col < row.size() && row[col].empty()) {
+                missingCounts[col]++;
+            }
+        }
+    }
+
+    return missingCounts;
+}
+
 int main() {
     // Prompt user for the CSV file name
     string filename;
@@ -180,6 +202,16 @@ int main() {
         cout << "Number of data rows: " << csvData.size() << endl;
     }
     cout << "Number of columns: "  << csvData[0].size()  << endl;
+
+    
+    //jasdeepbajaj
+    // Count and print the number of missing values per column
+    vector<int> missingCounts = countMissingValues(csvData);
+    cout << "\nMissing values per column:" << endl;
+    for (int col = 0; col < missingCounts.size(); col++) {
+        cout << "Column " << col + 1 << ": " << missingCounts[col] << " missing values" << endl;
+    }
+
     return 0;
 
 }
