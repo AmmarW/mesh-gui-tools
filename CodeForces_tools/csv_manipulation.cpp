@@ -3,6 +3,9 @@
 #include <vector>
 #include <sstream> // For string stream to parse CSV
 #include <string>
+#include <algorithm> 
+#include <cctype>
+
 // Checking if branch merge is workingv
 using namespace std;
 
@@ -67,6 +70,47 @@ void print2DVector(const vector<vector<string>> &data) {
     }
 }
 
+
+/**
+* Determines the data type of a given string value.
+* @param value The string value to check.
+* @return A string representing the data type ("int", "float", or "string").
+*/
+string determineDataType(const string &value) {
+    // Check if the value consists only of digits
+    if (all_of(value.begin(), value.end(), ::isdigit)) {
+        return "int";
+    }
+    // Try to convert the value to a float
+    try {
+        float temp = stof(value);
+        return "float";
+    } catch (...) {
+        // If conversion fails, return "string"
+        return "string";
+    }
+}
+
+vector<string> getColumnDataTypes(const vector<vector<string>> &data) {
+    vector<string> dataTypes;
+
+    // Ensure the dataset has at least two rows (header + at least one data row)
+    if (data.size() < 2) {
+        return dataTypes;  // Return empty if no valid data row exists
+    }
+
+    // Preallocate space for efficiency
+    dataTypes.reserve(data[1].size());
+
+    // Iterate through columns and determine data types
+    for (const auto &cell : data[1]) {
+        std::string type = determineDataType(cell);  // Explicitly store the return value
+        dataTypes.push_back(type);  // Store it in the vector
+    }
+
+    return dataTypes;
+}
+
 int main() {
     // Prompt user for the CSV file name
     string filename;
@@ -95,7 +139,20 @@ int main() {
             }
         }
         cout << "\n" << endl;
-    }
+
+        // Determine the data types for each column based on the second row (first data row)
+        vector<string> dataTypes = getColumnDataTypes(csvData);
+        
+        // Print the data types for each column
+        cout << "Data types per column:" << endl;
+        for (size_t col = 0; col < dataTypes.size(); ++col) {
+            cout << dataTypes[col];
+            if (col < dataTypes.size() - 1) {
+            cout << ";"; // Separate data types with semicolons
+            }
+        }
+        cout << "\n" << endl;
+        }
 
     
     // If there's a header, we skip the first row. Otherwise, we print them all.

@@ -36,7 +36,10 @@
 *.pdb
 
 # Excel Files
-.xls
-.csv
+*.xls
+*.csv
 CodeForces_tools/Gyroscope.csv
 CodeForces_tools/Gyroscope.xls
+
+# VS Code folder
+.vscode/
