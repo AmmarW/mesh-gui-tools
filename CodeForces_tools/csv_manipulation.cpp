@@ -6,7 +6,7 @@
 #include <algorithm> 
 #include <cctype>
 
-// Checking if branch merge is workingv
+// Checking if branch merge is working
 using namespace std;
 
 /**
@@ -77,6 +77,7 @@ void print2DVector(const vector<vector<string>> &data) {
 * @return A string representing the data type ("int", "float", or "string").
 */
 string determineDataType(const string &value) {
+    if (value.empty()) return "string"; // Handle empty values safely
     // Check if the value consists only of digits
     if (all_of(value.begin(), value.end(), ::isdigit)) {
         return "int";
