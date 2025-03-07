@@ -1,3 +1,6 @@
+Add a summary of what the code is doing, and take a look at objparser.cpp for reference
+
+To Dos -
 1- Handling of surface mesh, import and parsing -- *** Shivam
 2- Checking for validation to see if what code is giving is correct or not -- *** Ammar
 3- Visualisation either through qt ya techplot - *** Mohini
