@@ -1,0 +1,6 @@
+1- Handling of surface mesh, import and parsing -- *** Shivam
+2- Checking for validation to see if what code is giving is correct or not -- *** Ammar
+3- Visualisation either through qt ya techplot - *** Mohini
+4- Function for translation, rotation - basically manipulation --- *** Harsh
+5 - mesh merging -- *** Jasdeep
+6- performance optimisation - run time basicaly, initally add a timer to check the run time
