@@ -2,9 +2,9 @@ Add a summary of what the code is doing, and take a look at objparser.cpp for re
 
 To Dos -
 1- Handling of volume mesh, import and parsing -- *** Shivam (Function already present for surface mesh in objparser.cpp)
-2- Checking for validation to see if what code is giving is correct or not -- *** Ammar
+2- Checking for validation to see if what code is giving is correct or not, adding meta data such as boundary conditions (Work first on basis of surface mesh code then change it from volume based)  -- *** Ammar
 New code that needs to be added, will be a separate file for them
-3- Visualisation either through qt ya techplot - *** Mohini
+3- Visualisation either through qt ya techplot - *** Mohini ( also take care of which format you need for exported files for the visualisation purpose)
 4- Function for translation, rotation - basically manipulation --- *** Harsh
 5 - mesh merging -- *** Jasdeep
 
