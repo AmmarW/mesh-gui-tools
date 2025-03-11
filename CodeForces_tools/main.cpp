@@ -11,11 +11,22 @@
  * 6. Exports the metadata to a separate text file.
  *
  * Usage:
- *   ./main humanoid_robot.obj output.obj metadata.txt
+ *   ./main humanoid_robot.obj output.obj metadata.txt [surface|volume|both]
  *
  * @param argc Number of command-line arguments.
  * @param argv Array of command-line arguments.
- * @return int Exit status of the program.
+ * @return int Exit status of the application.
+ * 
+ * The application performs the following steps:
+ * 1. Parses the input OBJ file to create a Mesh object.
+ * 2. Validates the Mesh object using MeshValidator.
+ * 3. If validation is successful, exports the Mesh object to the output OBJ file using ObjExporter.
+ * 
+ * Error handling:
+ * - If the number of command-line arguments is less than 5, the application prints the usage message and exits with status 1.
+ * - If any exceptions are thrown during parsing, validation, or exporting, the application prints the error message and exits with status 1.
+ * - If mesh validation errors are found, they are printed to the standard error output.
+ * - If the mesh export fails, an error message is printed to the standard error output.
  */
 
 #include "ObjParser.h"
@@ -31,18 +42,31 @@ int main(int argc, char* argv[]) {
     // Measure the start time for runtime calculation
     auto start = std::chrono::high_resolution_clock::now();
     
-    if (argc < 4) {
-        std::cerr << "Usage: " << argv[0] << " humanoid_robot.obj output.obj metadata.txt\n";
+    if (argc < 5) {
+        std::cerr << "Usage: " << argv[0] << " humanoid_robot.obj output.obj metadata.txt [surface|volume|both]\n";
         return 1;
     }
     
     std::string inputFile = argv[1];
     std::string outputFile = argv[2];
     std::string metadataFile = argv[3];
+    std::string meshType = argv[4];
     
     try {
-        // Step 1: Parse the input OBJ file using ObjParser::parse to create a Mesh object.
-        Mesh mesh = ObjParser::parse(inputFile);
+        // Parse the Mesh
+        ObjParser parser;
+        Mesh mesh;
+        
+        if (meshType == "surface") {
+            mesh = parser.parseSurfaceMesh(inputFile);
+        } else if (meshType == "volume") {
+            mesh = parser.parseVolumeMesh(inputFile);
+        } else if (meshType == "both") {
+            mesh = parser.parse(inputFile);
+        } else {
+            std::cerr << "Invalid mesh type. Use 'surface', 'volume', or 'both'.\n";
+            return 1;
+        }
         
         // Step 2: Validate the mesh initially.
         std::vector<std::string> initialErrors = MeshValidator::validate(mesh);
