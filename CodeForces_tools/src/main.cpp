@@ -8,7 +8,7 @@
 #include <chrono>  // for timing
 
 // Include GLFW (make sure to link with glfw)
-#include <GLFW/glfw3.h>
+#include "GLFW/glfw3.h"
 
 // Include Dear ImGui headers and backends
 #include "imgui.h"
