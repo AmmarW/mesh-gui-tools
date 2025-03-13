@@ -1,6 +1,6 @@
-[submodule "imgui"]
-    path = CodeForces_tools/third-party/imgui
-    url = https://github.com/ocornut/imgui.git
-[submodule "CodeForces_tools/glfw"]
-    path = CodeForces_tools/third-party/glfw
-    url = https://github.com/glfw/glfw.git
+[submodule "CodeForces_tools/third-party/imgui"]
+	path = CodeForces_tools/third-party/imgui
+	url = https://github.com/ocornut/imgui.git
+[submodule "CodeForces_tools/third-party/glfw"]
+	path = CodeForces_tools/third-party/glfw
+	url = https://github.com/glfw/glfw.git
