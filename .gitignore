@@ -44,3 +44,6 @@ CodeForces_tools/*.txt
 
 # VS Code folder
 .vscode/
+
+# build folder
+build/
