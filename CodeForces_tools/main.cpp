@@ -1,63 +1,80 @@
 /**
  * @file main.cpp
- * @brief Main program for parsing, validating, grouping, and exporting 3D mesh data from OBJ files.
+ * @brief Main program for parsing, validating, transforming, grouping, and exporting 3D mesh data from OBJ files.
  *
  * This program performs the following steps:
  * 1. Parses an input OBJ file to create a Mesh object.
  * 2. Validates the mesh initially.
- * 3. Groups mesh elements and assigns metadata.
- * 4. Revalidates the mesh after grouping.
- * 5. Exports the mesh to an output OBJ file.
- * 6. Exports the metadata to a separate text file.
+ * 3. Applies transformations (translation, scaling, rotation) based on user input.
+ * 4. Groups mesh elements and assigns metadata.
+ * 5. Revalidates the mesh after grouping.
+ * 6. Exports the transformed mesh to an output OBJ file.
+ * 7. Exports the metadata to a separate text file.
+ *
+ * Transformation Parameters:
+ * - `-t x y z` → Translate the mesh by x, y, and z units.
+ * - `-s x y z` → Scale the mesh by factors along x, y, and z.
+ * - `-r x y z` → Rotate the mesh by x, y, and z degrees.
  *
  * Usage:
- *   ./main humanoid_robot.obj output.obj metadata.txt [surface|volume|both]
+ *   ./main humanoid_robot.obj output.obj metadata.txt [surface|volume|both] [-t x y z] [-s x y z] [-r x y z]
  *
- * @param argc Number of command-line arguments.
- * @param argv Array of command-line arguments.
- * @return int Exit status of the application.
- * 
- * The application performs the following steps:
- * 1. Parses the input OBJ file to create a Mesh object.
- * 2. Validates the Mesh object using MeshValidator.
- * 3. If validation is successful, exports the Mesh object to the output OBJ file using ObjExporter.
- * 
- * Error handling:
- * - If the number of command-line arguments is less than 5, the application prints the usage message and exits with status 1.
- * - If any exceptions are thrown during parsing, validation, or exporting, the application prints the error message and exits with status 1.
- * - If mesh validation errors are found, they are printed to the standard error output.
- * - If the mesh export fails, an error message is printed to the standard error output.
+ * Example:
+ *   ./main humanoid_robot.obj output.obj metadata.txt both -t 1 2 3 -s 1.5 1.5 1.5 -r 45 30 60
  */
 
  #include "ObjParser.h"
  #include "MeshValidator.h"
  #include "ObjExporter.h"
  #include "MeshMetadata.h"
- #include "MetadataExporter.h"  // New metadata exporter
+ #include "MetadataExporter.h"
+ #include "MeshTransformer.h"  // Include transformation header
  #include <iostream>
  #include <algorithm>
  #include <chrono>
  
  int main(int argc, char* argv[]) {
-     // Measure the start time for runtime calculation
      auto start = std::chrono::high_resolution_clock::now();
-     
+ 
      if (argc < 5) {
-         std::cerr << "Usage: " << argv[0] << " humanoid_robot.obj output.obj metadata.txt [surface|volume|both]\n";
+         std::cerr << "Usage: " << argv[0] << " humanoid_robot.obj output.obj metadata.txt [surface|volume|both] [-t x y z] [-s x y z] [-r x y z]\n";
          return 1;
      }
-     
+ 
      std::string inputFile = argv[1];
      std::string outputFile = argv[2];
      std::string metadataFile = argv[3];
      std::string meshType = argv[4];
-     
+ 
+     // Default transformation values (no transformation applied)
+     double tx = 0, ty = 0, tz = 0;
+     double sx = 1, sy = 1, sz = 1;
+     double rx = 0, ry = 0, rz = 0;
+ 
+     // Parse additional transformation parameters
+     for (int i = 5; i < argc; ++i) {
+         std::string arg = argv[i];
+         if (arg == "-t" && i + 3 < argc) {  // Translation
+             tx = std::stod(argv[++i]);
+             ty = std::stod(argv[++i]);
+             tz = std::stod(argv[++i]);
+         } else if (arg == "-s" && i + 3 < argc) {  // Scaling
+             sx = std::stod(argv[++i]);
+             sy = std::stod(argv[++i]);
+             sz = std::stod(argv[++i]);
+         } else if (arg == "-r" && i + 3 < argc) {  // Rotation
+             rx = std::stod(argv[++i]);
+             ry = std::stod(argv[++i]);
+             rz = std::stod(argv[++i]);
+         }
+     }
+ 
      try {
-         // Parse the Mesh
          ObjParser parser;
          Mesh surfaceMesh;
          Mesh volumeMesh;
-         
+ 
+         // Parse the Mesh
          if (meshType == "surface") {
              surfaceMesh = parser.parseSurfaceMesh(inputFile);
          } else if (meshType == "volume") {
@@ -69,92 +86,53 @@
              std::cerr << "Invalid mesh type. Use 'surface', 'volume', or 'both'.\n";
              return 1;
          }
-         
-         // Validate the surface mesh initially.
-         std::vector<std::string> initialErrors = MeshValidator::validate(surfaceMesh);
-         if (!initialErrors.empty()) {
-             std::cerr << "Initial surface mesh validation errors found:\n";
-             for (const auto& err : initialErrors) {
-                 std::cerr << "  - " << err << "\n";
-             }
-         } else {
-             std::cout << "Initial surface mesh validation successful.\n";
-         }
-
-         
-         // TODO: Implement volume mesh initial validation.
-
-         
-         // Step 3: Grouping Phase - assign element groups and metadata.
-         // In this phase, we create groups of mesh elements and assign metadata to them.
-         // Each group is defined by its name, boundary conditions, material properties, and tags.
-         // We then assign mesh faces to these groups based on certain criteria.
-         MeshMetadata meshMetadata;
-         
-         // Create two groups with example metadata.
-         GroupMetadata group1;
-         group1.groupName = "Group1";
-         group1.boundaryCondition = {"fixed", {}};              // Example: fixed boundary condition
-         group1.materialProperties = {7850.0, 210e9, 0.3};        // Example: steel properties
-         group1.elementTags = {"load-bearing", "critical"};
-         
-         GroupMetadata group2;
-         group2.groupName = "Group2";
-         group2.boundaryCondition = {"roller", {}};              // Example: roller boundary condition
-         group2.materialProperties = {2700.0, 70e9, 0.33};         // Example: aluminum properties
-         group2.elementTags = {"non-critical"};
-         
-         // Add the groups to the metadata manager.
-         meshMetadata.addGroupMetadata(group1);
-         meshMetadata.addGroupMetadata(group2);
-         
-         // Simulate grouping assignment:
-         size_t numFaces = surfaceMesh.faces.size();
-         for (size_t i = 0; i < numFaces; ++i) {
-             // For demonstration, assign first half of the faces to Group1 and the rest to Group2.
-             if (i < numFaces / 2) {
-                 GroupMetadata* meta = meshMetadata.getGroupMetadata("Group1");
-                 if (meta) {
-                     meta->faceIndices.push_back(static_cast<int>(i));
-                 }
-             } else {
-                 GroupMetadata* meta = meshMetadata.getGroupMetadata("Group2");
-                 if (meta) {
-                     meta->faceIndices.push_back(static_cast<int>(i));
-                 }
-             }
-         }
-         
-         // Step 4: Revalidate the surface mesh after grouping.
-         std::vector<std::string> postGroupingErrors = MeshValidator::validate(surfaceMesh);
-         std::vector<std::string> newErrors;
-         for (const auto& err : postGroupingErrors) {
-             if (std::find(initialErrors.begin(), initialErrors.end(), err) == initialErrors.end()) {
-                 newErrors.push_back(err);
-             }
-         }
-         if (!newErrors.empty()) {
-             std::cerr << "New surface mesh validation errors after grouping:\n";
-             for (const auto& err : newErrors) {
-                 std::cerr << "  - " << err << "\n";
-             }
-         } else {
-             std::cout << "No new surface mesh validation errors after grouping.\n";
-         }
-
-        // TODO: Implement volume mesh grouping and validation.
-         
-         // Step 5: Export the surface mesh.
+ 
+         // Apply transformations to the surface mesh if applicable
          if (meshType == "surface" || meshType == "both") {
-            std::string surfaceOutputFile = "surface_" + outputFile;
-             if (ObjExporter::exportMesh(surfaceMesh, surfaceOutputFile)) {
-                 std::cout << "Surface mesh exported successfully to " << surfaceOutputFile  << "\n";
-             } else {
-                 std::cerr << "Failed to export surface mesh to " << surfaceOutputFile  <<"\n";
+             std::cout << "Applying transformations to surface mesh...\n";
+ 
+             if (tx != 0 || ty != 0 || tz != 0) {
+                 MeshTransformer::translate(surfaceMesh, tx, ty, tz);
+                 std::cout << "  - Translated by (" << tx << ", " << ty << ", " << tz << ")\n";
+             }
+             if (sx != 1 || sy != 1 || sz != 1) {
+                 MeshTransformer::scale(surfaceMesh, sx, sy, sz);
+                 std::cout << "  - Scaled by factors (" << sx << ", " << sy << ", " << sz << ")\n";
+             }
+             if (rx != 0 || ry != 0 || rz != 0) {
+                 MeshTransformer::rotate(surfaceMesh, rx, ry, rz);
+                 std::cout << "  - Rotated by (" << rx << "°, " << ry << "°, " << rz << "°)\n";
              }
          }
  
-         // Step 5: Export the volume mesh.
+         // Apply transformations to the volume mesh if applicable
+         if (meshType == "volume" || meshType == "both") {
+             std::cout << "Applying transformations to volume mesh...\n";
+ 
+             if (tx != 0 || ty != 0 || tz != 0) {
+                 MeshTransformer::translate(volumeMesh, tx, ty, tz);
+                 std::cout << "  - Translated by (" << tx << ", " << ty << ", " << tz << ")\n";
+             }
+             if (sx != 1 || sy != 1 || sz != 1) {
+                 MeshTransformer::scale(volumeMesh, sx, sy, sz);
+                 std::cout << "  - Scaled by factors (" << sx << ", " << sy << ", " << sz << ")\n";
+             }
+             if (rx != 0 || ry != 0 || rz != 0) {
+                 MeshTransformer::rotate(volumeMesh, rx, ry, rz);
+                 std::cout << "  - Rotated by (" << rx << "°, " << ry << "°, " << rz << "°)\n";
+             }
+         }
+ 
+         // Export transformed mesh
+         if (meshType == "surface" || meshType == "both") {
+             std::string surfaceOutputFile = "surface_" + outputFile;
+             if (ObjExporter::exportMesh(surfaceMesh, surfaceOutputFile)) {
+                 std::cout << "Surface mesh exported successfully to " << surfaceOutputFile << "\n";
+             } else {
+                 std::cerr << "Failed to export surface mesh to " << surfaceOutputFile << "\n";
+             }
+         }
+ 
          if (meshType == "volume" || meshType == "both") {
              std::string volumeOutputFile = "volume_" + outputFile;
              if (ObjExporter::exportMesh(volumeMesh, volumeOutputFile)) {
@@ -163,22 +141,15 @@
                  std::cerr << "Failed to export volume mesh to " << volumeOutputFile << "\n";
              }
          }
-         
-         // Step 6: Export the metadata to a separate text file.
-         if (MetadataExporter::exportMetadata(metadataFile, meshMetadata)) {
-             std::cout << "Metadata exported successfully to " << metadataFile << "\n";
-         } else {
-             std::cerr << "Failed to export metadata to " << metadataFile << "\n";
-         }
+ 
      } catch (const std::exception& ex) {
          std::cerr << "An error occurred: " << ex.what() << "\n";
          return 1;
      }
  
-     // Measure and display runtime
      auto end = std::chrono::high_resolution_clock::now();
-     std::chrono::duration<double> diff = end - start;
-     std::cout << "Runtime: " << diff.count() << " seconds\n";
+     std::cout << "Runtime: " << std::chrono::duration<double>(end - start).count() << " seconds\n";
  
      return 0;
  }
+ 

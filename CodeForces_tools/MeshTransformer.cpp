@@ -1,60 +1,61 @@
 /**
  * @file MeshTransformer.cpp
- * @brief Implementation of MeshTransformer class for applying transformations to a Mesh.
+ * @brief Implements functions for applying transformations (translation, scaling, rotation) to a Mesh.
  */
 
-#include "MeshTransformer.h"
-#include <cmath>
-
-// Function to apply translation
-void MeshTransformer::translate(Mesh& mesh, double tx, double ty, double tz) {
-    for (auto& vertex : mesh.vertices) {
-        vertex.x += tx;
-        vertex.y += ty;
-        vertex.z += tz;
-    }
-}
-
-// Function to apply scaling
-void MeshTransformer::scale(Mesh& mesh, double sx, double sy, double sz) {
-    for (auto& vertex : mesh.vertices) {
-        vertex.x *= sx;
-        vertex.y *= sy;
-        vertex.z *= sz;
-    }
-}
-
-// Function to apply rotation
-void MeshTransformer::rotate(Mesh& mesh, double angle, char axis) {
-    Eigen::Matrix3d rotationMatrix = Eigen::Matrix3d::Identity();
-    double radians = angle * M_PI / 180.0;
-    double cosA = cos(radians), sinA = sin(radians);
-
-    switch (axis) {
-        case 'x': // Rotation around X-axis
-            rotationMatrix << 1, 0, 0,
-                              0, cosA, -sinA,
-                              0, sinA, cosA;
-            break;
-        case 'y': // Rotation around Y-axis
-            rotationMatrix << cosA, 0, sinA,
-                              0, 1, 0,
-                              -sinA, 0, cosA;
-            break;
-        case 'z': // Rotation around Z-axis
-            rotationMatrix << cosA, -sinA, 0,
-                              sinA, cosA, 0,
-                              0, 0, 1;
-            break;
-        default:
-            throw std::invalid_argument("Invalid rotation axis. Use 'x', 'y', or 'z'.");
-    }
-
-    for (auto& vertex : mesh.vertices) {
-        Eigen::Vector3d v(vertex.x, vertex.y, vertex.z);
-        Eigen::Vector3d transformed = rotationMatrix * v;
-        vertex.x = transformed.x();
-        vertex.y = transformed.y();
-        vertex.z = transformed.z();
-    }
-}
+ #include "MeshTransformer.h"
+ #include <cmath>
+ 
+ // Define M_PI if not defined
+ #ifndef M_PI
+ #define M_PI 3.14159265358979323846
+ #endif
+ 
+ void MeshTransformer::translate(Mesh& mesh, double tx, double ty, double tz) {
+     for (auto& vertex : mesh.vertices) {
+         vertex.x += tx;
+         vertex.y += ty;
+         vertex.z += tz;
+     }
+ }
+ 
+ void MeshTransformer::scale(Mesh& mesh, double sx, double sy, double sz) {
+     for (auto& vertex : mesh.vertices) {
+         vertex.x *= sx;
+         vertex.y *= sy;
+         vertex.z *= sz;
+     }
+ }
+ 
+ void MeshTransformer::rotate(Mesh& mesh, double angleX, double angleY, double angleZ) {
+     // Convert angles from degrees to radians
+     double radX = angleX * M_PI / 180.0;
+     double radY = angleY * M_PI / 180.0;
+     double radZ = angleZ * M_PI / 180.0;
+ 
+     // Rotation matrices
+     double cosX = cos(radX), sinX = sin(radX);
+     double cosY = cos(radY), sinY = sin(radY);
+     double cosZ = cos(radZ), sinZ = sin(radZ);
+ 
+     for (auto& vertex : mesh.vertices) {
+         // Rotate around X-axis
+         double y1 = cosX * vertex.y - sinX * vertex.z;
+         double z1 = sinX * vertex.y + cosX * vertex.z;
+         vertex.y = y1;
+         vertex.z = z1;
+ 
+         // Rotate around Y-axis
+         double x2 = cosY * vertex.x + sinY * vertex.z;
+         double z2 = -sinY * vertex.x + cosY * vertex.z;
+         vertex.x = x2;
+         vertex.z = z2;
+ 
+         // Rotate around Z-axis
+         double x3 = cosZ * vertex.x - sinZ * vertex.y;
+         double y3 = sinZ * vertex.x + cosZ * vertex.y;
+         vertex.x = x3;
+         vertex.y = y3;
+     }
+ }
+ 

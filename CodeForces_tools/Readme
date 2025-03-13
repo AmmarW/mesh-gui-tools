@@ -10,3 +10,136 @@ New code that needs to be added, will be a separate file for them
 
 This is to be worked in last
 6- performance optimisation - run time basicaly, initally add a timer to check the run time
+
+Setting Up vcpkg and Eigen on Windows
+
+1. Install vcpkg
+
+Step 1: Open PowerShell as Administrator
+
+Press Win + X, then select Windows PowerShell (Admin).
+
+Step 2: Clone vcpkg Repository
+
+Run the following command to download vcpkg:
+
+git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
+
+If you don't have Git installed, download it from:🔗 Git for Windows
+
+Step 3: Build vcpkg
+
+Once vcpkg is cloned, navigate to the folder:
+
+cd C:\vcpkg
+
+Now, run the bootstrap script:
+
+.\bootstrap-vcpkg.bat
+
+This will build vcpkg.exe, allowing you to install packages.
+
+2. Add vcpkg to System PATH
+
+To use vcpkg from anywhere in cmd or PowerShell, you need to add it to your system's PATH.
+
+Temporary Method (Command Line)
+
+Each time you open a new terminal, run:
+
+set PATH=%PATH%;C:\vcpkg
+
+Permanent Method (Environment Variables)
+
+Search for "Environment Variables" in Windows Start.
+
+Click Edit the system environment variables.
+
+Click Environment Variables.
+
+Under System Variables, find Path, then click Edit.
+
+Click New, then add:
+
+C:\vcpkg
+
+Click OK → Restart your terminal.
+
+3. Verify vcpkg Installation
+
+Now, close and reopen Command Prompt (cmd), then type:
+
+vcpkg version
+
+If everything is correct, you should see:
+
+vcpkg package management program version <version-number>
+
+4. Install Eigen Using vcpkg
+
+To install Eigen3, run:
+
+vcpkg install eigen3
+
+If you're using x64-windows, install:
+
+vcpkg install eigen3:x64-windows
+
+5. Find Eigen’s Include Path
+
+Once installed, Eigen should be located in:
+
+C:\vcpkg\installed\x64-windows\include
+
+To confirm Eigen is installed, run:
+
+dir C:\vcpkg\installed\x64-windows\include\Eigen\Dense
+
+If the file exists, Eigen is successfully installed.
+
+6. Compile with Eigen in C++
+
+To compile your C++ project with Eigen, use:
+
+g++ -o mesh_transform main.cpp MeshTransformer.cpp ObjParser.cpp ObjExporter.cpp MeshValidator.cpp -I C:\vcpkg\installed\x64-windows\include
+
+If you are using MinGW-w64, ensure you point to the correct Eigen path:
+
+g++ -o mesh_transform main.cpp MeshTransformer.cpp ObjParser.cpp ObjExporter.cpp MeshValidator.cpp -I C:/vcpkg/installed/x64-windows/include
+
+7. (Optional) Integrate vcpkg with Visual Studio
+
+If you are using Visual Studio, run:
+
+vcpkg integrate install
+
+This ensures Visual Studio automatically finds Eigen and other vcpkg-installed packages.
+
+8. Test Eigen in a Simple Program
+
+Create a test file test_eigen.cpp:
+
+#include <iostream>
+#include <Eigen/Dense>
+
+int main() {
+    Eigen::Matrix2d mat;
+    mat << 1, 2, 3, 4;
+    std::cout << "Eigen Matrix:\n" << mat << std::endl;
+    return 0;
+}
+
+Compile and run:
+
+g++ test_eigen.cpp -I C:\vcpkg\installed\x64-windows\include -o test_eigen.exe
+test_eigen.exe
+
+Summary
+
+✅ Step 1: Install vcpkg✅ Step 2: Run bootstrap-vcpkg.bat✅ Step 3: Add C:\vcpkg to System PATH✅ Step 4: Install Eigen using vcpkg install eigen3✅ Step 5: Compile with -I C:\vcpkg\installed\x64-windows\include
+
+🚀 Now, you should be able to use #include <Eigen/Dense> without errors.
+
+If you still have issues, check the Eigen path and ensure MinGW is correctly installed.
+
+
