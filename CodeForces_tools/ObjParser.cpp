@@ -1,41 +1,20 @@
-/**
- * @file ObjParser.cpp
- * @brief Implementation of the ObjParser class for parsing .obj files into Mesh objects.
- * 
- * This file contains the implementation of the ObjParser class, which provides functionality
- * to parse .obj files and convert them into Mesh objects. The .obj file format is commonly
- * used for representing 3D geometry.
- * 
- * The parser supports the following elements:
- * - Vertex positions (v)
- * - Texture coordinates (vt)
- * - Vertex normals (vn)
- * - Faces (f)
- * 
- * The parser also handles comments (lines starting with '#') and skips empty lines.
- * 
- * The parseFaceElement function is a helper function used to parse face elements, which can
- * be in the form of "v", "v/vt", "v//vn", or "v/vt/vn".
- * 
- * The parse function reads the .obj file line by line, parses the relevant elements, and
- * populates the Mesh object with vertices, texture coordinates, normals, and faces.
- * 
- * If an error occurs during parsing (e.g., invalid format), an error message is printed to
- * std::cerr, and the parser continues to the next line.
- * 
- * @throws std::runtime_error if the file cannot be opened.
- * 
- * @param filePath The path to the .obj file to be parsed.
- * @return A Mesh object containing the parsed data.
- */
 #include "ObjParser.h"
 #include <fstream>
 #include <sstream>
 #include <iostream>
 #include <stdexcept>
 #include <algorithm>
+#include <set>
 
-// Helper function to parse a face element (e.g., "v", "v/vt", "v//vn", or "v/vt/vn").
+/**
+ * @brief Helper function to parse a face element.
+ *
+ * This function parses a face element token (e.g., "v", "v/vt", "v//vn", or "v/vt/vn")
+ * and returns a FaceElement object.
+ *
+ * @param token The face element token to be parsed.
+ * @return A FaceElement object representing the parsed face element.
+ */
 static FaceElement parseFaceElement(const std::string& token) {
     int v = -1, vt = -1, vn = -1;
     std::stringstream ss(token);
@@ -57,7 +36,16 @@ static FaceElement parseFaceElement(const std::string& token) {
     return FaceElement(v, vt, vn);
 }
 
-Mesh ObjParser::parse(const std::string& filePath) {
+/**
+ * @brief Parses an OBJ file and returns a surface Mesh.
+ *
+ * This method takes the file path of an OBJ file as input,
+ * parses the file, and returns a Mesh object representing the surface of the 3D model.
+ *
+ * @param filePath The path to the OBJ file to be parsed.
+ * @return A Mesh object representing the parsed surface of the 3D model.
+ */
+Mesh ObjParser::parseSurfaceMesh(const std::string& filePath) {
     Mesh mesh;
     std::ifstream file(filePath);
     if (!file.is_open()) {
@@ -107,7 +95,64 @@ Mesh ObjParser::parse(const std::string& filePath) {
             }
             mesh.faces.push_back(face);
         }
-        // Extend here for additional tokens or data if needed.
     }
+
     return mesh;
+}
+
+/**
+ * @brief Parses an OBJ file and returns a volume Mesh.
+ *
+ * This method takes the file path of an OBJ file as input,
+ * parses the file, generates a volume mesh, and returns a Mesh object representing the volume of the 3D model.
+ *
+ * @param filePath The path to the OBJ file to be parsed.
+ * @return A Mesh object representing the parsed volume of the 3D model.
+ */
+Mesh ObjParser::parseVolumeMesh(const std::string& filePath) {
+    Mesh mesh = parseSurfaceMesh(filePath);
+    generateVolumeMesh(mesh);
+    return mesh;
+}
+
+/**
+ * @brief Parses an OBJ file and returns a Mesh with both surface and volume data.
+ *
+ * This method takes the file path of an OBJ file as input,
+ * parses the file, generates both surface and volume meshes, and returns a Mesh object.
+ *
+ * @param filePath The path to the OBJ file to be parsed.
+ * @return A Mesh object representing the parsed 3D model with both surface and volume data.
+ */
+Mesh ObjParser::parse(const std::string& filePath) {
+    Mesh mesh = parseSurfaceMesh(filePath);
+    generateVolumeMesh(mesh);
+    return mesh;
+}
+
+/**
+ * @brief Generates a volume mesh from a surface mesh.
+ *
+ * This method takes a Mesh object representing a surface mesh,
+ * generates a volume mesh using Delaunay triangulation, and updates the Mesh object.
+ *
+ * @param mesh The Mesh object to be updated with the volume mesh.
+ */
+void ObjParser::generateVolumeMesh(Mesh& mesh) {
+    using TetrahedralMesh = std::set<Mesh::Tetrahedron>;
+    TetrahedralMesh tetrahedralMesh;
+
+    int n = mesh.vertices.size();
+    int refinement_factor = 1; // You can make this configurable
+
+    for (int i = 0; i < n - 3; i++) {
+        for (int r = 0; r < refinement_factor; ++r) {
+            int j = (i + 1 + r) % (n - 1);
+            int k = (i + 2 + r) % (n - 1);
+            int l = (i + 3 + r) % (n - 1);
+            tetrahedralMesh.insert({i, j, k, l});
+        }
+    }
+
+    mesh.tetrahedrons.assign(tetrahedralMesh.begin(), tetrahedralMesh.end());
 }

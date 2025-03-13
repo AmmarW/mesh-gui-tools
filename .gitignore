@@ -40,6 +40,7 @@
 *.csv
 CodeForces_tools/Gyroscope.csv
 CodeForces_tools/Gyroscope.xls
+CodeForces_tools/*.txt
 
 # VS Code folder
 .vscode/

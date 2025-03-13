@@ -6,6 +6,7 @@
 
 #include "ObjExporter.h"
 #include <fstream>
+#include <iostream>
 
 /**
  * @brief Exports the given mesh to an OBJ file at the specified file path.
@@ -57,6 +58,22 @@ bool ObjExporter::exportMesh(const Mesh& mesh, const std::string& filePath) {
         }
         file << "\n";
     }
+
+    // Write tetrahedrons as triangular faces. Only for Volume meshes.
+    for (const auto& tet : mesh.tetrahedrons) {
+        
+        int v0 = std::get<0>(tet) + 1;
+        int v1 = std::get<1>(tet) + 1;
+        int v2 = std::get<2>(tet) + 1;
+        int v3 = std::get<3>(tet) + 1;
+
+        // Each tetrahedron is represented by 4 triangular faces.
+        file << "f " << v0 << " " << v1 << " " << v2 << "\n";
+        file << "f " << v0 << " " << v1 << " " << v3 << "\n";
+        file << "f " << v0 << " " << v2 << " " << v3 << "\n";
+        file << "f " << v1 << " " << v2 << " " << v3 << "\n";
+    }
     
+    file.close();
     return true;
 }
