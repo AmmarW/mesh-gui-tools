@@ -33,6 +33,7 @@ add_executable(CodeForces_Mesh_Handler
     src/MeshValidator.cpp
     src/ObjExporter.cpp
     src/ObjParser.cpp
+    src/MeshTransform.cpp
     third-party/tinyfiledialogs/tinyfiledialogs.c
     ${IMGUI_SRC}
 )
