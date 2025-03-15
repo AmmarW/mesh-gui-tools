@@ -5,7 +5,7 @@
 #include <string>
 #include <map>
 #include <algorithm>
-#include <chrono>  // for timing
+#include <chrono>
 
 // Include GLFW (make sure to link with glfw)
 #include "GLFW/glfw3.h"
@@ -16,7 +16,7 @@
 #include "imgui_impl_opengl3.h"
 
 // Include tinyfiledialogs for file selection
-#include "tinyfiledialogs.h"
+#include "third-party/tinyfiledialogs/tinyfiledialogs.h"
 
 // Include your mesh processing headers
 #include "ObjParser.h"

@@ -25,3 +25,20 @@
     ```
 
 The resulting executable `CodeForces_Mesh_Handler.exe` can be found in the `build\Release` directory.
+
+
+
+
+## CGAL Setup:
+git clone https://github.com/microsoft/vcpkg.git
+cd .\vcpkg\
+.\bootstrap-vcpkg.bat -disableMetrics
+$env:VCPKG_ROOT = "C:\vcpkg"
+$env:PATH = "$env:VCPKG_ROOT;$env:PATH"
+
+vcpkg install cgal
+vcpkg install tbb
+
+## CGAL Build
+cmake -B build -S . -DCMAKE_PREFIX_PATH=C:/vcpkg/installed/x64-windows
+cmake --build build --config Release
