@@ -63,8 +63,11 @@ Ensure the following paths are added to your system and environment variables:
 
 1. Configure the project with vcpkg:
     ```sh
-    cmake -B build -S . -DCMAKE_PREFIX_PATH=C:/vcpkg/installed/x64-windows
-    ```
+     # build using VS (version)
+     cmake -S . -B build -G "Visual Studio 17 2022"
+     # specify vcpkg if build fails
+     cmake -B build -S . -DCMAKE_PREFIX_PATH=C:/path-to/vcpkg/installed/x64-windows
+     ```
 2. Build the project:
     ```sh
     cmake --build build --config Release

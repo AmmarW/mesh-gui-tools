@@ -10,38 +10,99 @@
 #include <cstring>
 #include <cstdlib>
 #include <iterator>
-
-// GLFW and OpenGL
+#include "Timer.h"
+// GUI headers
 #include "GLFW/glfw3.h"
-
-// Dear ImGui and backends
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
-
-// tinyfiledialogs for file selection
 #include "tinyfiledialogs.h"
-
-// Mesh handling headers (for display and validation)
+// Mesh processing headers
 #include "ObjParser.h"
 #include "Mesh.h"
 #include "MeshValidator.h"
-
-// Additional headers for transformation and export
 #include "ObjExporter.h"
 #include "MeshMetadata.h"        
 #include "MetadataExporter.h"    
 #include "MeshTransform.h"
-
 #include "MeshConverter.h"
-
-// Include new class for Boolean operations
 #include "MeshBooleanOperations.h"
-
-// Include AdaptiveMeshGenerator
 #include "AdaptiveMeshGenerator.h"
 
 //------------------------------------------------------------------------------
+
+// Global variables for viewer controls
+bool cameraMovementEnabled = false;
+float camOffsetX = 0.0f;
+float camOffsetY = 0.0f;
+float camZoom = 1.0f;
+int renderMode = 1; // 0 = Faces, 1 = Wireframe
+
+// Transformation parameters (defaults: no translation/rotation, unit scale)
+double tx = 0.0, ty = 0.0, tz = 0.0;
+double sx = 1.0, sy = 1.0, sz = 1.0;
+double rx = 0.0, ry = 0.0, rz = 0.0;
+
+// AMG parameters (for AdaptiveMeshGenerator Controls)
+double amg_sizing_field = 0.7;
+double amg_edge_distance = 0.01;
+double amg_facet_angle = 25.0;
+double amg_facet_distance = 0.01;
+double amg_cell_radius_edge_ratio = 3.0;
+float amg_cube_size = 10.0f; // as float
+
+// DECAPRECATED: Mesh type selection: 0 = "surface", 1 = "volume", 2 = "both"
+// const char* meshTypeOptions[] = { "surface", "volume", "both" };
+int currentMeshType = 0;
+
+// Output file names for export (for OBJ and metadata)
+char outputFileName[128] = "output.obj";
+char metadataFileName[128] = "metadata.json";
+char outputVolMeshFileName[128] = "output_volume_mesh";
+
+// File name for the Boolean operations result (OFF file)
+std::string booleanResultFile = "boolean_result.off";
+bool booleanOperationPerformed = false;
+
+// Global merged metadata for the boolean-merged mesh.
+MeshMetadata mergedMeshMetadata;
+// Global active group name (for assigning picked faces)
+std::string activeGroupName = "Inner";
+
+// --- Drag Selection Globals ---
+bool pickMode = false;      // toggled by a checkbox in the Metadata Assignment panel
+bool dragSelectionActive = false;
+ImVec2 dragStart, dragEnd;
+bool exportCentroidInfo = false;  // If checked, export centroid info
+bool exportFaceInfo = false;      // If checked, export face info
+
+// Global log text string
+std::string logText = "";
+void appendLog(const std::string &msg) {
+    logText += msg + "\n";
+}
+
+// Structure for each mesh in the scene.
+struct SceneMesh {
+    Mesh mesh;
+    std::string filePath;
+    std::vector<std::string> validationErrors;
+    std::vector<bool> errorFaces;
+    double loadTime; // in milliseconds
+    bool enabled = true;
+};
+std::vector<SceneMesh> sceneMeshes;
+int activeMeshIndex = -1;
+
+
+// Helper: Extract filename from a full path.
+std::string extractFilename(const std::string &fullPath) {
+    size_t pos = fullPath.find_last_of("/\\");
+    if (pos != std::string::npos)
+        return fullPath.substr(pos + 1);
+    return fullPath;
+}
+
 // Helper function to compute error faces.
 std::vector<bool> getErrorFaces(const Mesh &mesh) {
     std::vector<bool> errorFaces(mesh.faces.size(), false);
@@ -78,67 +139,36 @@ std::vector<bool> getErrorFaces(const Mesh &mesh) {
     return errorFaces;
 }
 
-// Global variables for viewer controls
-bool cameraMovementEnabled = false;
-float camOffsetX = 0.0f;
-float camOffsetY = 0.0f;
-float camZoom = 1.0f;
-int renderMode = 1; // 0 = Faces, 1 = Wireframe
+// Global validation log text string
+std::string validationLogText = "";
 
-// Transformation parameters (defaults: no translation/rotation, unit scale)
-double tx = 0.0, ty = 0.0, tz = 0.0;
-double sx = 1.0, sy = 1.0, sz = 1.0;
-double rx = 0.0, ry = 0.0, rz = 0.0;
-
-// Mesh type selection: 0 = "surface", 1 = "volume", 2 = "both"
-const char* meshTypeOptions[] = { "surface", "volume", "both" };
-int currentMeshType = 0;
-
-// Output file names for export (for OBJ and metadata)
-char outputFileName[128] = "output.obj";
-char metadataFileName[128] = "metadata.json";
-
-// File name for the Boolean operations result (OFF file)
-std::string booleanResultFile = "boolean_result.off";
-bool booleanOperationPerformed = false;
-
-// Global log text string
-std::string logText = "";
-void appendLog(const std::string &msg) {
-    logText += msg + "\n";
+// Function to append messages to the validation log
+void appendValidationLog(const std::string &msg) {
+    validationLogText += msg + "\n";
 }
 
-// Structure for each mesh in the scene.
-struct SceneMesh {
-    Mesh mesh;
-    std::string filePath;
-    std::vector<std::string> validationErrors;
-    std::vector<bool> errorFaces;
-    double loadTime; // in milliseconds
-    bool enabled = true;
-};
-std::vector<SceneMesh> sceneMeshes;
-int activeMeshIndex = -1;
+// Mesh validation logic update
+void validateActiveMesh() {
+    if (activeMeshIndex < 0 || sceneMeshes.empty()) {
+        appendValidationLog("No active mesh selected for validation.");
+        return;
+    }
 
-// Global merged metadata for the boolean-merged mesh.
-MeshMetadata mergedMeshMetadata;
-// Global active group name (for assigning picked faces)
-std::string activeGroupName = "Inner";
+    SceneMesh &activeMesh = sceneMeshes[activeMeshIndex];
 
-// AMG parameters (for AdaptiveMeshGenerator Controls)
-double amg_sizing_field = 0.7;
-double amg_edge_distance = 0.01;
-double amg_facet_angle = 25.0;
-double amg_facet_distance = 0.01;
-double amg_cell_radius_edge_ratio = 3.0;
-float amg_cube_size = 10.0f; // as float
+    // Validate the mesh and store errors
+    activeMesh.validationErrors = MeshValidator::validate(activeMesh.mesh);
+    activeMesh.errorFaces = getErrorFaces(activeMesh.mesh);
 
-// --- Drag Selection Globals ---
-bool pickMode = false;      // toggled by a checkbox in the Metadata Assignment panel
-bool dragSelectionActive = false;
-ImVec2 dragStart, dragEnd;
-bool exportCentroidInfo = false;  // If checked, export centroid info
-bool exportFaceInfo = false;      // If checked, export face info
+    if (activeMesh.validationErrors.empty()) {
+        appendValidationLog("Mesh " + extractFilename(activeMesh.filePath) + " passed validation.");
+    } else {
+        appendValidationLog("Validation errors found in mesh " + extractFilename(activeMesh.filePath) + ":");
+        for (const auto &error : activeMesh.validationErrors) {
+            appendValidationLog("- " + error);
+        }
+    }
+}
 
 // Helper: convert a Mesh to a CGAL Polyhedron (OFF format) in memory.
 bool convertMeshToPolyhedron(const Mesh &mesh, MeshBooleanOperations::Polyhedron &poly) {
@@ -162,13 +192,6 @@ bool convertMeshToPolyhedron(const Mesh &mesh, MeshBooleanOperations::Polyhedron
     return true;
 }
 
-// Helper: Extract filename from a full path.
-std::string extractFilename(const std::string &fullPath) {
-    size_t pos = fullPath.find_last_of("/\\");
-    if (pos != std::string::npos)
-        return fullPath.substr(pos + 1);
-    return fullPath;
-}
 
 // Simple function to convert an OFF file to an OBJ file.
 bool convertOffToObj(const std::string &offFile, const std::string &objFile) {
@@ -323,6 +346,15 @@ void addBooleanOperationMesh(const std::string &offFile) {
             newMesh.mesh = parser.parse(newObjFile.c_str());
             newMesh.validationErrors = MeshValidator::validate(newMesh.mesh);
             newMesh.errorFaces = getErrorFaces(newMesh.mesh);
+            appendValidationLog("Boolean operation mesh added: " + extractFilename(newMesh.filePath));
+            if (newMesh.validationErrors.empty()) {
+                appendValidationLog("Mesh is valid after boolean operation.");
+            } else {
+                appendValidationLog("Validation errors in boolean operation mesh:");
+                for (const auto& error : newMesh.validationErrors) {
+                    appendValidationLog("- " + error);
+                }
+            }
             newMesh.loadTime = 0.0;
             sceneMeshes.push_back(newMesh);
             appendLog("Added boolean operation mesh to scene: " + extractFilename(newObjFile));
@@ -347,6 +379,30 @@ void addBooleanOperationMesh(const std::string &offFile) {
         appendLog("Conversion from OFF to OBJ failed.");
     }
 }
+
+/**
+ * @brief Entry point of the application.
+ * 
+ * Initializes GLFW and creates a window for rendering. Sets up ImGui context and initializes
+ * ImGui for OpenGL and GLFW. The main loop handles rendering, user input, and GUI interactions.
+ * 
+ * @param argc Number of command-line arguments.
+ * @param argv Array of command-line arguments.
+ * @return int Exit status of the application.
+ * 
+ * The main loop includes:
+ * - Camera controls for zoom and offset.
+ * - Adding and clearing OBJ files.
+ * - Displaying a list of loaded meshes.
+ * - Applying transformations to the active mesh.
+ * - Performing boolean operations on meshes.
+ * - Generating and exporting adaptive volume meshes.
+ * - Assigning metadata to mesh groups.
+ * - Logging application events and errors.
+ * 
+ * The rendering section uses OpenGL to draw the loaded meshes and handles camera transformations.
+ * ImGui windows are used for various controls and settings.
+ */
 
 int main(int argc, char** argv) {
     if (!glfwInit()) {
@@ -398,6 +454,26 @@ int main(int argc, char** argv) {
             camOffsetY -= io.MouseDelta.y * 0.005f;
         }
         
+        // Set initial position on the left side and allow resizing
+        ImGui::SetNextWindowPos(ImVec2(10, 50), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(350, 400), ImGuiCond_FirstUseEver);
+        ImGui::Begin("Mesh Validation Log", nullptr, ImGuiWindowFlags_AlwaysVerticalScrollbar);
+        if (ImGui::Button("Clear Validation Log")) {
+            validationLogText.clear();
+        }
+        ImGui::Separator();
+        ImGui::BeginGroup();
+        ImGui::BeginChildFrame(ImGui::GetID("ValidationLogFrame"), ImVec2(0, ImGui::GetContentRegionAvail().y));
+        if (!validationLogText.empty()) {
+            ImGui::TextWrapped("%s", validationLogText.c_str());
+        } else {
+            ImGui::Text("No validation errors.");
+        }
+        ImGui::EndChildFrame();
+        ImGui::EndGroup();
+        ImGui::End();
+    
+
         // --- Add OBJ File ---
         ImGui::SetNextWindowPos(ImVec2(10, 70),  ImGuiCond_FirstUseEver);
         ImGui::Begin("Add OBJ File", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
@@ -408,25 +484,35 @@ int main(int argc, char** argv) {
             if (filePath) {
                 SceneMesh newMesh;
                 newMesh.filePath = filePath;
-                auto startTime = std::chrono::high_resolution_clock::now();
+                Timer timer;
                 try {
                     ObjParser parser;
                     newMesh.mesh = parser.parse(filePath);
                     newMesh.validationErrors = MeshValidator::validate(newMesh.mesh);
                     newMesh.errorFaces = getErrorFaces(newMesh.mesh);
+                    // Append validation messages
+                    appendValidationLog("Imported mesh: " + extractFilename(newMesh.filePath));
+                    if (newMesh.validationErrors.empty()) {
+                        appendValidationLog("Mesh is valid.");
+                    } else {
+                        appendValidationLog("Validation errors in " + extractFilename(newMesh.filePath) + ":");
+                        for (const auto& error : newMesh.validationErrors) {
+                            appendValidationLog("- " + error);
+                        }
+                    }
                     appendLog("Imported mesh: " + extractFilename(newMesh.filePath));
                 } catch (const std::exception &ex) {
                     appendLog("Error parsing OBJ file: " + std::string(ex.what()));
                 }
-                auto endTime = std::chrono::high_resolution_clock::now();
-                newMesh.loadTime = std::chrono::duration<double, std::milli>(endTime - startTime).count();
-                appendLog("Mesh " + extractFilename(newMesh.filePath) + " loaded in " + std::to_string(newMesh.loadTime) + " ms");
+                newMesh.loadTime = timer.elapsed();
+                appendLog("Mesh " + extractFilename(newMesh.filePath) + " loaded and validated in " + std::to_string(newMesh.loadTime) + " ms");
                 sceneMeshes.push_back(newMesh);
                 if (activeMeshIndex < 0) {
                     activeMeshIndex = 0;
                 }
             }
         }
+        
         if (ImGui::Button("Clear Meshes")) {
             sceneMeshes.clear();
             activeMeshIndex = -1;
@@ -481,13 +567,14 @@ int main(int argc, char** argv) {
         ImGui::InputDouble("Rotate X (°)", &rx, 0.0, 0.0, "%.2f");
         ImGui::InputDouble("Rotate Y (°)", &ry, 0.0, 0.0, "%.2f");
         ImGui::InputDouble("Rotate Z (°)", &rz, 0.0, 0.0, "%.2f");
-        ImGui::Combo("Mesh Type", &currentMeshType, meshTypeOptions, IM_ARRAYSIZE(meshTypeOptions));
+        // ImGui::Combo("Mesh Type", &currentMeshType, meshTypeOptions, IM_ARRAYSIZE(meshTypeOptions));
         if (ImGui::Button("Apply Transformations")) {
             if (activeMeshIndex < 0 || sceneMeshes.empty()) {
                 appendLog("No active mesh selected for transformation.");
             } else {
                 try {
                     SceneMesh &activeMesh = sceneMeshes[activeMeshIndex];
+                    Timer timer;
                     ObjParser parser;
                     if (currentMeshType == 0 || currentMeshType == 2)
                         activeMesh.mesh = parser.parseSurfaceMesh(activeMesh.filePath.c_str());
@@ -499,9 +586,20 @@ int main(int argc, char** argv) {
                         MeshTransformer::scale(activeMesh.mesh, sx, sy, sz);
                     if (rx != 0.0 || ry != 0.0 || rz != 0.0)
                         MeshTransformer::rotate(activeMesh.mesh, rx, ry, rz);
+                    double transformTime = timer.elapsed();
                     activeMesh.validationErrors = MeshValidator::validate(activeMesh.mesh);
                     activeMesh.errorFaces = getErrorFaces(activeMesh.mesh);
+                    appendValidationLog("Transformations applied to " + extractFilename(activeMesh.filePath));
+                    if (activeMesh.validationErrors.empty()) {
+                        appendValidationLog("Mesh is valid after transformation.");
+                    } else {
+                        appendValidationLog("Validation errors after transformation:");
+                        for (const auto& error : activeMesh.validationErrors) {
+                            appendValidationLog("- " + error);
+                        }
+                    }
                     appendLog("Transformations applied to mesh: " + extractFilename(activeMesh.filePath));
+                    appendLog("Transformation time: " + std::to_string(transformTime) + " ms");
                 } catch (const std::exception &ex) {
                     appendLog("Error applying transformations: " + std::string(ex.what()));
                 }
@@ -530,6 +628,7 @@ int main(int argc, char** argv) {
         ImGui::Begin("Boolean Operations", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
         ImGui::Text("Perform Boolean Operations on Transformed Meshes:");
         if (ImGui::Button("Union")) {
+            Timer timer;
             std::vector<MeshBooleanOperations::Polyhedron> polyMeshes;
             bool conversionSuccess = true;
             for (const auto &sceneMesh : sceneMeshes) {
@@ -554,8 +653,11 @@ int main(int argc, char** argv) {
                 } else
                     appendLog("Union operation failed.");
             }
+            double unionTime = timer.elapsed();
+            appendLog("Union operation time: " + std::to_string(unionTime) + " ms");
         }
         if (ImGui::Button("Intersection")) {
+            Timer timer;
             std::vector<MeshBooleanOperations::Polyhedron> polyMeshes;
             bool conversionSuccess = true;
             for (const auto &sceneMesh : sceneMeshes) {
@@ -580,8 +682,11 @@ int main(int argc, char** argv) {
                 } else
                     appendLog("Intersection operation failed.");
             }
+            double intersectionTime = timer.elapsed();
+            appendLog("Intersection operation time: " + std::to_string(intersectionTime) + " ms");
         }
         if (ImGui::Button("Difference")) {
+            Timer timer;
             std::vector<MeshBooleanOperations::Polyhedron> polyMeshes;
             bool conversionSuccess = true;
             for (const auto &sceneMesh : sceneMeshes) {
@@ -606,6 +711,8 @@ int main(int argc, char** argv) {
                 } else
                     appendLog("Difference operation failed.");
             }
+            double differenceTime = timer.elapsed();
+            appendLog("Difference operation time: " + std::to_string(differenceTime) + " ms");
         }
         ImGui::End();
         
@@ -623,18 +730,17 @@ int main(int argc, char** argv) {
             if (!booleanOperationPerformed)
                 appendLog("No boolean operation result available for volume mesh generation.");
             else {
-                auto startExport = std::chrono::high_resolution_clock::now();
+                Timer timer;
                 try {
                     AdaptiveMeshGenerator adaptiveMeshGen;
-                    if (adaptiveMeshGen.generateVolumeMesh(booleanResultFile, static_cast<int>(amg_cube_size), metadataFileName))
+                    if (adaptiveMeshGen.generateVolumeMesh(booleanResultFile, static_cast<int>(amg_cube_size), outputVolMeshFileName))
                         appendLog("Volume mesh generated and exported using AMG parameters.");
                     else
                         appendLog("Failed to generate volume mesh from boolean operation result.");
                 } catch (const std::exception &ex) {
                     appendLog("Error exporting volume mesh: " + std::string(ex.what()));
                 }
-                auto endExport = std::chrono::high_resolution_clock::now();
-                double exportProcessingTime = std::chrono::duration<double, std::milli>(endExport - startExport).count();
+                double exportProcessingTime = timer.elapsed();
                 appendLog("Volume mesh export processing time: " + std::to_string(exportProcessingTime) + " ms");
                 if (MetadataExporter::exportMetadata(metadataFileName, mergedMeshMetadata))
                     appendLog("Metadata exported successfully to " + std::string(metadataFileName));
@@ -834,8 +940,11 @@ endGroupLoop:;
                 if (!exportCentroidInfo && !exportFaceInfo) {
                     appendLog("No export option selected. Nothing done.");
                 } else {
-                    if (MetadataExporter::exportMetadata(metadataFileName, mergedMeshMetadata))
-                        appendLog("Metadata exported to " + std::string(metadataFileName));
+                    Timer timer;
+                    bool success = MetadataExporter::exportMetadata(metadataFileName, mergedMeshMetadata);
+                    double exportTime = timer.elapsed();
+                    if (success)
+                        appendLog("Metadata exported to " + std::string(metadataFileName) + " in " + std::to_string(exportTime) + " ms");
                     else
                         appendLog("Failed exporting metadata to " + std::string(metadataFileName));
                 }
@@ -867,9 +976,9 @@ endGroupLoop:;
         }
         
         // --- Log Window ---
-        ImGui::SetNextWindowPos(ImVec2(10, display_h - 150), ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(display_w - 20, 140), ImGuiCond_Always);
-        ImGui::Begin("Log", nullptr, ImGuiWindowFlags_NoResize);
+        ImGui::SetNextWindowPos(ImVec2(10, display_h - 150), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(display_w - 20, 140), ImGuiCond_FirstUseEver);
+        ImGui::Begin("Log", nullptr);
         if (ImGui::Button("Clear Log")) {
             logText.clear();
         }
