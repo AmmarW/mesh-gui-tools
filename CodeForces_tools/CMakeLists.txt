@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(CodeForces_Mesh_Handler)
+project(MeshX)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
@@ -43,7 +43,7 @@ add_definitions(-DCGAL_CONCURRENT_MESH_3)
 
 
 # Add the executable
-add_executable(CodeForces_Mesh_Handler
+add_executable(MeshX
     src/main.cpp
     src/MetadataExporter.cpp
     src/MeshMetadata.cpp
@@ -56,10 +56,11 @@ add_executable(CodeForces_Mesh_Handler
     src/AdaptiveMeshGenerator.cpp
     src/MeshConverter.cpp
     src/MeshBooleanOperations.cpp
+    media/resources.rc
 )
 
 # Link libraries
-target_link_libraries(CodeForces_Mesh_Handler
+target_link_libraries(MeshX
     glfw
     ${OPENGL_gl_LIBRARY}
     CGAL::CGAL
@@ -68,4 +69,11 @@ target_link_libraries(CodeForces_Mesh_Handler
     TBB::tbbmalloc
     CGAL::TBB_support
     nlohmann_json::nlohmann_json
+)
+
+# Custom command to copy the icon file to the build directory
+add_custom_command(TARGET MeshX POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_SOURCE_DIR}/media/icon.png"
+    $<TARGET_FILE_DIR:MeshX>
 )

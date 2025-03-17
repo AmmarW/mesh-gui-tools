@@ -1,3 +1,12 @@
+/**
+ * @file main.cpp
+ * @brief Mesh viewer and editor application with ImGui-based GUI.
+ * 
+ * This application allows users to load, visualize, transform, and validate 3D meshes.
+ * It includes support for OBJ file import, boolean operations, adaptive mesh generation,
+ * and metadata assignment to mesh groups.
+ */
+
 #include <iostream>
 #include <vector>
 #include <string>
@@ -17,6 +26,8 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 #include "tinyfiledialogs.h"
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
 // Mesh processing headers
 #include "ObjParser.h"
 #include "Mesh.h"
@@ -31,19 +42,19 @@
 
 //------------------------------------------------------------------------------
 
-// Global variables for viewer controls
+/** Global variables for viewer controls */
 bool cameraMovementEnabled = false;
 float camOffsetX = 0.0f;
 float camOffsetY = 0.0f;
 float camZoom = 1.0f;
 int renderMode = 1; // 0 = Faces, 1 = Wireframe
 
-// Transformation parameters (defaults: no translation/rotation, unit scale)
+/** Transformation parameters */ 
 double tx = 0.0, ty = 0.0, tz = 0.0;
 double sx = 1.0, sy = 1.0, sz = 1.0;
 double rx = 0.0, ry = 0.0, rz = 0.0;
 
-// AMG parameters (for AdaptiveMeshGenerator Controls)
+/** Adaptive Mesh Generator parameters */
 double amg_sizing_field = 0.7;
 double amg_edge_distance = 0.01;
 double amg_facet_angle = 25.0;
@@ -51,11 +62,11 @@ double amg_facet_distance = 0.01;
 double amg_cell_radius_edge_ratio = 3.0;
 float amg_cube_size = 10.0f; // as float
 
-// DECAPRECATED: Mesh type selection: 0 = "surface", 1 = "volume", 2 = "both"
+// DEPRECATED: Mesh type selection: 0 = "surface", 1 = "volume", 2 = "both"
 // const char* meshTypeOptions[] = { "surface", "volume", "both" };
 int currentMeshType = 0;
 
-// Output file names for export (for OBJ and metadata)
+/** Output file names */    
 char outputFileName[128] = "output.obj";
 char metadataFileName[128] = "metadata.json";
 char outputVolMeshFileName[128] = "output_volume_mesh";
@@ -78,24 +89,36 @@ bool exportFaceInfo = false;      // If checked, export face info
 
 // Global log text string
 std::string logText = "";
+/**
+ * @brief Appends a message to the global log.
+ * @param msg The message to log.
+ */
 void appendLog(const std::string &msg) {
     logText += msg + "\n";
 }
 
-// Structure for each mesh in the scene.
+
+/** Structure representing a scene mesh */
 struct SceneMesh {
-    Mesh mesh;
-    std::string filePath;
-    std::vector<std::string> validationErrors;
-    std::vector<bool> errorFaces;
-    double loadTime; // in milliseconds
-    bool enabled = true;
+    Mesh mesh; ///< The mesh object
+    std::string filePath; ///< File path of the mesh
+    std::vector<std::string> validationErrors; ///< Validation error messages
+    std::vector<bool> errorFaces; ///< Boolean array for faces with errors
+    double loadTime; ///< Time taken to load the mesh (ms)
+    bool enabled = true; ///< Visibility status of the mesh
 };
+
+/** Global list of scene meshes */
 std::vector<SceneMesh> sceneMeshes;
+
+/** Index of the currently active mesh */
 int activeMeshIndex = -1;
 
-
-// Helper: Extract filename from a full path.
+/**
+ * @brief Extracts the filename from a full file path.
+ * @param fullPath The complete file path.
+ * @return Extracted filename.
+ */
 std::string extractFilename(const std::string &fullPath) {
     size_t pos = fullPath.find_last_of("/\\");
     if (pos != std::string::npos)
@@ -106,8 +129,8 @@ std::string extractFilename(const std::string &fullPath) {
 // Helper function to compute error faces.
 std::vector<bool> getErrorFaces(const Mesh &mesh) {
     std::vector<bool> errorFaces(mesh.faces.size(), false);
-    std::map<std::pair<int,int>, int> edgeCount;
-    
+    // std::map<std::pair<int,int>, int> edgeCount; // Old code
+    std::unordered_map<std::pair<int,int>, int, boost::hash<std::pair<int,int>>> edgeCount;
     // Count occurrences of each edge (store edges with sorted vertex indices)
     for (const auto& face : mesh.faces) {
         size_t n = face.elements.size();
@@ -147,19 +170,17 @@ void appendValidationLog(const std::string &msg) {
     validationLogText += msg + "\n";
 }
 
-// Mesh validation logic update
+/**
+ * @brief Validates the active mesh and updates the validation log.
+ */
 void validateActiveMesh() {
     if (activeMeshIndex < 0 || sceneMeshes.empty()) {
         appendValidationLog("No active mesh selected for validation.");
         return;
     }
-
     SceneMesh &activeMesh = sceneMeshes[activeMeshIndex];
-
-    // Validate the mesh and store errors
     activeMesh.validationErrors = MeshValidator::validate(activeMesh.mesh);
     activeMesh.errorFaces = getErrorFaces(activeMesh.mesh);
-
     if (activeMesh.validationErrors.empty()) {
         appendValidationLog("Mesh " + extractFilename(activeMesh.filePath) + " passed validation.");
     } else {
@@ -170,85 +191,21 @@ void validateActiveMesh() {
     }
 }
 
-// Helper: convert a Mesh to a CGAL Polyhedron (OFF format) in memory.
-bool convertMeshToPolyhedron(const Mesh &mesh, MeshBooleanOperations::Polyhedron &poly) {
-    std::stringstream ss;
-    ss << "OFF\n";
-    ss << mesh.vertices.size() << " " << mesh.faces.size() << " 0\n";
-    for (const auto &v : mesh.vertices)
-        ss << v.x << " " << v.y << " " << v.z << "\n";
-    for (const auto &face : mesh.faces) {
-        ss << face.elements.size();
-        for (const auto &elem : face.elements)
-            ss << " " << elem.vertexIndex;
-        ss << "\n";
-    }
-    poly.clear();
-    if (!(ss >> poly)) {
-        std::cerr << "Error converting mesh to Polyhedron" << std::endl;
-        return false;
-    }
-    CGAL::Polygon_mesh_processing::triangulate_faces(poly);
-    return true;
-}
-
-
-// Simple function to convert an OFF file to an OBJ file.
-bool convertOffToObj(const std::string &offFile, const std::string &objFile) {
-    std::ifstream in(offFile);
-    if (!in) {
-        std::cerr << "Failed to open OFF file: " << offFile << std::endl;
-        return false;
-    }
-    std::string header;
-    in >> header;
-    if (header != "OFF") {
-        std::cerr << "File " << offFile << " is not a valid OFF file." << std::endl;
-        return false;
-    }
-    int nVertices, nFaces, nEdges;
-    in >> nVertices >> nFaces >> nEdges;
-    std::vector<std::array<double, 3>> vertices(nVertices);
-    for (int i = 0; i < nVertices; i++) {
-        in >> vertices[i][0] >> vertices[i][1] >> vertices[i][2];
-    }
-    std::vector<std::vector<int>> faces(nFaces);
-    for (int i = 0; i < nFaces; i++) {
-        int count;
-        in >> count;
-        faces[i].resize(count);
-        for (int j = 0; j < count; j++) {
-            in >> faces[i][j];
-        }
-    }
-    in.close();
-    std::ofstream out(objFile);
-    if (!out) {
-        std::cerr << "Failed to open OBJ file for writing: " << objFile << std::endl;
-        return false;
-    }
-    for (int i = 0; i < nVertices; i++)
-        out << "v " << vertices[i][0] << " " << vertices[i][1] << " " << vertices[i][2] << "\n";
-    for (int i = 0; i < nFaces; i++) {
-        out << "f";
-        for (int idx : faces[i])
-            out << " " << (idx + 1);
-        out << "\n";
-    }
-    out.close();
-    return true;
-}
-
 // Helper: Simple projection of a 3D point into screen coordinates (orthographic).
 ImVec2 projectPoint(const std::array<double, 3>& point, double aspect, float zoom,
                     float offsetX, float offsetY, int display_w, int display_h) {
+    // Apply zoom and offset to the point coordinates
     double x = (point[0] + offsetX) * zoom;
     double y = (point[1] + offsetY) * zoom;
+    
+    // Convert to normalized device coordinates (NDC)
     double ndc_x = (x + aspect) / (2 * aspect);
     double ndc_y = (y + 1.0) / 2.0;
+    
+    // Convert NDC to screen coordinates
     ImVec2 screenPos;
     screenPos.x = ndc_x * display_w;
-    screenPos.y = (1.0 - ndc_y) * display_h; // invert y
+    screenPos.y = (1.0 - ndc_y) * display_h; // invert y-axis for screen coordinates
     return screenPos;
 }
 
@@ -267,16 +224,19 @@ void processDragSelection(int dispw, int disph, double aspect) {
         return;
     }
     auto &mergedMesh = sceneMeshes[mergedIdx].mesh;
+
     // Get the active group
     GroupMetadata* group = mergedMeshMetadata.getGroupMetadata(activeGroupName);
     if (!group) {
         appendLog("Could not find active group metadata for " + activeGroupName);
         return;
     }
+
     // Clear existing face assignments in that group.
     group->faceIndices.clear();
     group->spatialData.clear();
 
+    // Determine the selection rectangle boundaries
     float x0 = std::min(dragStart.x, dragEnd.x);
     float x1 = std::max(dragStart.x, dragEnd.x);
     float y0 = std::min(dragStart.y, dragEnd.y);
@@ -299,6 +259,7 @@ void processDragSelection(int dispw, int disph, double aspect) {
         std::array<double,3> centroid = {cx, cy, cz};
         ImVec2 screenPt = projectPoint(centroid, aspect, camZoom, camOffsetX, camOffsetY, dispw, disph);
 
+        // Check if the projected point is within the selection rectangle
         if (screenPt.x >= x0 && screenPt.x <= x1 && screenPt.y >= y0 && screenPt.y <= y1) {
             // Depending on export flags:
             if (exportCentroidInfo && !exportFaceInfo) {
@@ -337,13 +298,17 @@ void disableIndividualMeshes() {
 // Convert the boolean result OFF to OBJ, add to the scene, create default group, disable others.
 void addBooleanOperationMesh(const std::string &offFile) {
     std::string newObjFile = "boolean_result.obj";
-    if (convertOffToObj(offFile, newObjFile)) {
+    MeshConverter converter;
+    // Convert the OFF file to OBJ format
+    if (converter.convertOffToObj(offFile, newObjFile)) {
         appendLog("Converted boolean result OFF to OBJ: " + newObjFile);
         SceneMesh newMesh;
         newMesh.filePath = newObjFile;
         try {
+            // Parse the newly created OBJ file
             ObjParser parser;
             newMesh.mesh = parser.parse(newObjFile.c_str());
+            // Validate the mesh and get error faces
             newMesh.validationErrors = MeshValidator::validate(newMesh.mesh);
             newMesh.errorFaces = getErrorFaces(newMesh.mesh);
             appendValidationLog("Boolean operation mesh added: " + extractFilename(newMesh.filePath));
@@ -356,9 +321,11 @@ void addBooleanOperationMesh(const std::string &offFile) {
                 }
             }
             newMesh.loadTime = 0.0;
+            // Add the new mesh to the scene
             sceneMeshes.push_back(newMesh);
             appendLog("Added boolean operation mesh to scene: " + extractFilename(newObjFile));
             booleanOperationPerformed = true;
+            // Disable individual meshes after boolean operation
             disableIndividualMeshes();
             // Initialize merged metadata with a default group
             mergedMeshMetadata = MeshMetadata();
@@ -378,6 +345,23 @@ void addBooleanOperationMesh(const std::string &offFile) {
     } else {
         appendLog("Conversion from OFF to OBJ failed.");
     }
+}
+
+// Function to load an image as an OpenGL texture
+GLuint LoadTextureFromFile(const char* filename, int& width, int& height) {
+    int channels;
+    unsigned char* data = stbi_load(filename, &width, &height, &channels, 4);
+    if (data) {
+        GLuint texture;
+        glGenTextures(1, &texture);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        stbi_image_free(data);
+        return texture;
+    }
+    return 0;
 }
 
 /**
@@ -403,7 +387,6 @@ void addBooleanOperationMesh(const std::string &offFile) {
  * The rendering section uses OpenGL to draw the loaded meshes and handles camera transformations.
  * ImGui windows are used for various controls and settings.
  */
-
 int main(int argc, char** argv) {
     if (!glfwInit()) {
         std::cerr << "Failed to initialize GLFW\n";
@@ -411,12 +394,27 @@ int main(int argc, char** argv) {
     }
     const GLFWvidmode* mode = glfwGetVideoMode(glfwGetPrimaryMonitor());
     int width = mode->width, height = mode->height;
-    GLFWwindow* window = glfwCreateWindow(width, height, "Mesh Viewer", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(width, height, "MeshX by CodeForces", NULL, NULL);
     if (!window) {
         std::cerr << "Failed to create GLFW window\n";
         glfwTerminate();
         return -1;
     }
+
+    // Load the icon
+    int iconWidth, iconHeight, channels;
+    unsigned char* pixels = stbi_load("icon.png", &iconWidth, &iconHeight, &channels, 4);
+    if (pixels) {
+        GLFWimage icon;
+        icon.width = iconWidth;
+        icon.height = iconHeight;
+        icon.pixels = pixels;
+        glfwSetWindowIcon(window, 1, &icon);
+        stbi_image_free(pixels);
+    } else {
+        std::cerr << "Failed to load icon" << std::endl;
+    }
+
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1);
     IMGUI_CHECKVERSION();
@@ -425,6 +423,14 @@ int main(int argc, char** argv) {
     ImGui::StyleColorsDark();
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 130");
+
+   // Load the splash screen texture (the app icon)
+   GLuint iconTexture = LoadTextureFromFile("icon.png", iconWidth, iconHeight);
+   // Start timer for splash screen
+   auto splashStartTime = std::chrono::steady_clock::now();
+   const int splashDuration = 3000; // Duration in milliseconds
+
+   bool showSplash = true;        
 
     int display_w, display_h;
     appendLog("Application started.");
@@ -436,6 +442,40 @@ int main(int argc, char** argv) {
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
+
+        // Check splash screen duration
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - splashStartTime).count();
+        bool showSplash = (elapsed < splashDuration);
+       if (showSplash) {
+           // Draw the splash screen
+           ImGui::SetNextWindowPos(ImVec2(0, 0));
+           ImGui::SetNextWindowSize(io.DisplaySize);
+           ImGui::Begin("Splash", nullptr,
+                        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+                        ImGuiWindowFlags_NoInputs);
+           // Center content by using dummy widgets or calculate offsets
+           ImGui::Dummy(ImVec2(0.0f, 450.0f)); // Vertical offset
+           // Draw the app icon (centered)
+           ImVec2 windowSize = io.DisplaySize;
+           ImGui::SetCursorPosX((windowSize.x - iconWidth) * 0.5f);
+           ImGui::Image((ImTextureID)(intptr_t)iconTexture, ImVec2(iconWidth, iconHeight));
+           // App name (centered)
+           ImGui::SetCursorPosX((windowSize.x - iconWidth) * 0.5f); // Adjust width as needed
+           ImGui::Text("MeshX by CodeForces");
+           ImGui::SetCursorPosX((windowSize.x - iconWidth) * 0.5f); // Adjust width as needed
+           ImGui::Text("--------------------");
+           // Developer names
+           const char* developers[5] = { "Ammar Waheed", "Shivam Vashi", "Jasdeep Bajaj", "Harsh Mittal", "Mohini Priya Kolluri" };
+           for (int i = 0; i < 5; i++) {
+               ImGui::SetCursorPosX((windowSize.x - iconWidth) * 0.5f); // Adjust width as needed
+               ImGui::Text("%s", developers[i]);
+           }
+           ImGui::End();
+       }
+
+
         glfwGetFramebufferSize(window, &display_w, &display_h);
         
         // --- Camera Controls ---
@@ -453,7 +493,7 @@ int main(int argc, char** argv) {
             camOffsetX += io.MouseDelta.x * 0.005f;
             camOffsetY -= io.MouseDelta.y * 0.005f;
         }
-        
+
         // Set initial position on the left side and allow resizing
         ImGui::SetNextWindowPos(ImVec2(10, 50), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSize(ImVec2(350, 400), ImGuiCond_FirstUseEver);
@@ -578,14 +618,12 @@ int main(int argc, char** argv) {
                     ObjParser parser;
                     if (currentMeshType == 0 || currentMeshType == 2)
                         activeMesh.mesh = parser.parseSurfaceMesh(activeMesh.filePath.c_str());
-                    else if (currentMeshType == 1)
-                        activeMesh.mesh = parser.parseVolumeMesh(activeMesh.filePath.c_str());
                     if (tx != 0.0 || ty != 0.0 || tz != 0.0)
-                        MeshTransformer::translate(activeMesh.mesh, tx, ty, tz);
+                        MeshTransform::translate(activeMesh.mesh, tx, ty, tz);
                     if (sx != 1.0 || sy != 1.0 || sz != 1.0)
-                        MeshTransformer::scale(activeMesh.mesh, sx, sy, sz);
+                        MeshTransform::scale(activeMesh.mesh, sx, sy, sz);
                     if (rx != 0.0 || ry != 0.0 || rz != 0.0)
-                        MeshTransformer::rotate(activeMesh.mesh, rx, ry, rz);
+                        MeshTransform::rotate(activeMesh.mesh, rx, ry, rz);
                     double transformTime = timer.elapsed();
                     activeMesh.validationErrors = MeshValidator::validate(activeMesh.mesh);
                     activeMesh.errorFaces = getErrorFaces(activeMesh.mesh);
@@ -631,9 +669,10 @@ int main(int argc, char** argv) {
             Timer timer;
             std::vector<MeshBooleanOperations::Polyhedron> polyMeshes;
             bool conversionSuccess = true;
+            MeshConverter converter; // Create an instance of MeshConverter
             for (const auto &sceneMesh : sceneMeshes) {
                 MeshBooleanOperations::Polyhedron poly;
-                if (!convertMeshToPolyhedron(sceneMesh.mesh, poly)) {
+                if (!converter.convertMeshToPolyhedron(sceneMesh.mesh, poly)) {
                     conversionSuccess = false;
                     break;
                 }
@@ -660,9 +699,10 @@ int main(int argc, char** argv) {
             Timer timer;
             std::vector<MeshBooleanOperations::Polyhedron> polyMeshes;
             bool conversionSuccess = true;
+            MeshConverter converter;
             for (const auto &sceneMesh : sceneMeshes) {
                 MeshBooleanOperations::Polyhedron poly;
-                if (!convertMeshToPolyhedron(sceneMesh.mesh, poly)) {
+                if (!converter.convertMeshToPolyhedron(sceneMesh.mesh, poly)) {
                     conversionSuccess = false;
                     break;
                 }
@@ -689,9 +729,10 @@ int main(int argc, char** argv) {
             Timer timer;
             std::vector<MeshBooleanOperations::Polyhedron> polyMeshes;
             bool conversionSuccess = true;
+            MeshConverter converter;
             for (const auto &sceneMesh : sceneMeshes) {
                 MeshBooleanOperations::Polyhedron poly;
-                if (!convertMeshToPolyhedron(sceneMesh.mesh, poly)) {
+                if (!converter.convertMeshToPolyhedron(sceneMesh.mesh, poly)) {
                     conversionSuccess = false;
                     break;
                 }
@@ -1014,6 +1055,44 @@ endGroupLoop:;
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
         else
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+
+
+        // Set grid color and line width
+        glColor3f(0.3f, 0.3f, 0.3f); // A subtle grey
+        glLineWidth(1.0f);
+        glBegin(GL_LINES);
+        float gridSpacing = 0.2f;  // Adjust spacing as desired
+
+        // Compute the visible region in world coordinates (inverse of the modelview transformation)
+        // The projection is set with: glOrtho(-aspect, aspect, -1, 1, -10, 10)
+        // and the modelview applies: glTranslatef(camOffsetX, camOffsetY, 0); glScalef(camZoom, camZoom, 1);
+        float xMin = (-aspect) / camZoom - camOffsetX;
+        float xMax = (aspect) / camZoom - camOffsetX;
+        float yMin = (-1.0f) / camZoom - camOffsetY;
+        float yMax = (1.0f) / camZoom - camOffsetY;
+
+        // Align boundaries to grid spacing so the lines "snap" to a grid
+        float startX = gridSpacing * floor(xMin / gridSpacing);
+        float endX   = gridSpacing * ceil(xMax / gridSpacing);
+        float startY = gridSpacing * floor(yMin / gridSpacing);
+        float endY   = gridSpacing * ceil(yMax / gridSpacing);
+
+        glColor3f(0.3f, 0.3f, 0.3f); // Subtle grey for grid lines
+        glLineWidth(1.0f);
+        glBegin(GL_LINES);
+        // Draw vertical grid lines
+        for (float x = startX; x <= endX; x += gridSpacing) {
+            glVertex3f(x, yMin, 0.0f);
+            glVertex3f(x, yMax, 0.0f);
+        }
+
+        // Draw horizontal grid lines
+        for (float y = startY; y <= endY; y += gridSpacing) {
+            glVertex3f(xMin, y, 0.0f);
+            glVertex3f(xMax, y, 0.0f);
+        }
+        glEnd();
+
 
         for (const auto &sceneMesh : sceneMeshes) {
             if (!sceneMesh.enabled)

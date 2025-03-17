@@ -1,5 +1,5 @@
 /**
- * @file MeshTransformer.h
+ * @file MeshTransform.h
  * @brief Provides functions to apply transformations (translation, scaling, rotation) to a Mesh.
  *
  * This file contains the declaration of transformation functions that allow translation,
@@ -9,12 +9,12 @@
  *  - Call `translate()`, `scale()`, or `rotate()` with the required parameters.
  */
 
- #ifndef MESHTRANSFORMER_H
- #define MESHTRANSFORMER_H
+ #ifndef MESHTRANSFORM_H
+ #define MESHTRANSFORM_H
  
  #include "Mesh.h"
  
- class MeshTransformer {
+ class MeshTransform {
  public:
      /**
       * @brief Translates the mesh by given offsets.
@@ -44,5 +44,5 @@
      static void rotate(Mesh& mesh, double angleX, double angleY, double angleZ);
  };
  
- #endif // MESHTRANSFORMER_H
+ #endif // MESHTRANSFORM_H
  

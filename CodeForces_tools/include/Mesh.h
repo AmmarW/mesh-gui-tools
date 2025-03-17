@@ -26,15 +26,19 @@
   * @struct FaceElement
   * @brief Represents an element of a face, including vertex, texture, and normal indices.
   *
-  * @param vertexIndex Index into the vertices vector.
-  * @param texCoordIndex Index into the texture coordinates vector (-1 if not present).
-  * @param normalIndex Index into the normals vector (-1 if not present).
+  * Each face element references a vertex, an optional texture coordinate, and an optional normal.
   */
  struct FaceElement {
-     int vertexIndex;   // Index into the vertices vector
-     int texCoordIndex; // Index into the texture coordinates vector (-1 if not present)
-     int normalIndex;   // Index into the normals vector (-1 if not present)
+     int vertexIndex;   ///< Index into the vertices vector
+     int texCoordIndex; ///< Index into the texture coordinates vector (-1 if not present)
+     int normalIndex;   ///< Index into the normals vector (-1 if not present)
  
+     /**
+      * @brief Constructs a FaceElement with specified indices.
+      * @param v Index of the vertex.
+      * @param t Index of the texture coordinate (-1 if not present).
+      * @param n Index of the normal (-1 if not present).
+      */
      FaceElement(int v, int t = -1, int n = -1)
          : vertexIndex(v), texCoordIndex(t), normalIndex(n) {}
  };
@@ -44,7 +48,7 @@
   * @brief Represents a face in the mesh, which is a collection of face elements.
   */
  struct Face {
-     std::vector<FaceElement> elements;
+     std::vector<FaceElement> elements; ///< Collection of face elements defining the face.
  };
  
  /**
@@ -52,32 +56,23 @@
   * @brief Represents the entire mesh data.
   *
   * The Mesh class holds the vertices, faces, normals, and texture coordinates of the mesh.
-  *
-  * @var Mesh::vertices
-  * A vector of Vertex structures representing the vertices of the mesh.
-  *
-  * @var Mesh::faces
-  * A vector of Face structures representing the faces of the mesh.
-  *
-  * @var Mesh::normals
-  * A vector of Vertex structures representing the normals of the mesh (optional).
-  *
-  * @var Mesh::texCoords
-  * A vector of 2D arrays representing the texture coordinates of the mesh (optional).
-  *
-  * @var Mesh::tetrahedrons
-  * A vector of Tetrahedron tuples representing the tetrahedrons of the volume mesh.
   */
  class Mesh {
  public:
-     std::vector<Vertex> vertices;
-     std::vector<Face> faces;
-     std::vector<Vertex> normals;             // Optional normals
-     std::vector<std::array<double, 2>> texCoords; // Optional texture coordinates
+     std::vector<Vertex> vertices; ///< List of vertices in the mesh.
+     std::vector<Face> faces; ///< List of faces in the mesh.
+     std::vector<Vertex> normals; ///< Optional normals for shading calculations.
+     std::vector<std::array<double, 2>> texCoords; ///< Optional texture coordinates.
  
-     // New data structure for volume mesh (tetrahedrons)
+     /**
+      * @typedef Tetrahedron
+      * @brief Represents a tetrahedral element in a volumetric mesh.
+      *
+      * A Tetrahedron is represented as a tuple containing four vertex indices.
+      */
      using Tetrahedron = std::tuple<int, int, int, int>;
-     std::vector<Tetrahedron> tetrahedrons;
+     std::vector<Tetrahedron> tetrahedrons; ///< List of tetrahedrons for volumetric meshes.
  };
  
  #endif // MESH_H
+ 

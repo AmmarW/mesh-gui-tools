@@ -42,28 +42,7 @@
       * @return A Mesh object representing the parsed surface of the 3D model.
       */
      Mesh parseSurfaceMesh(const std::string& filePath);
- 
-     /**
-      * @brief Parses an OBJ file and returns a volume Mesh.
-      *
-      * This method takes the file path of an OBJ file as input,
-      * parses the file, generates a volume mesh, and returns a Mesh object representing the volume of the 3D model.
-      *
-      * @param filePath The path to the OBJ file to be parsed.
-      * @return A Mesh object representing the parsed volume of the 3D model.
-      */
-     Mesh parseVolumeMesh(const std::string& filePath);
- 
- private:
-     /**
-      * @brief Generates a volume mesh from a surface mesh.
-      *
-      * This method takes a Mesh object representing a surface mesh,
-      * generates a volume mesh using Delaunay triangulation, and updates the Mesh object.
-      *
-      * @param mesh The Mesh object to be updated with the volume mesh.
-      */
-     void generateVolumeMesh(Mesh& mesh);
  };
  
  #endif // OBJPARSER_H
+ 
