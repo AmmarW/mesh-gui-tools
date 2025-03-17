@@ -7,12 +7,9 @@
 class MetadataExporter {
 public:
     /**
-     * @brief Exports the mesh metadata to a text file.
+     * @brief Exports the mesh metadata as JSON to a file.
      *
-     * The file will contain group names, boundary conditions, material properties,
-     * element tags, and a list of face indices assigned to each group.
-     *
-     * @param filePath The path to the output metadata file.
+     * @param filePath The path to the output metadata file (should have a .json extension).
      * @param metadata The MeshMetadata object containing the group metadata.
      * @return true if the file was successfully written, false otherwise.
      */

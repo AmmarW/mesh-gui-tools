@@ -11,6 +11,7 @@ set(CMAKE_PREFIX_PATH "C:/vcpkg/installed/x64-windows")
 find_package(OpenGL REQUIRED)
 find_package(CGAL CONFIG REQUIRED)
 find_package(TBB REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
 
 # Include directories for CGAL and Boost
 include_directories(${CGAL_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS})
@@ -44,7 +45,7 @@ add_definitions(-DCGAL_CONCURRENT_MESH_3)
 # Add the executable
 add_executable(CodeForces_Mesh_Handler
     src/main.cpp
-    src/MeshdataExporter.cpp
+    src/MetadataExporter.cpp
     src/MeshMetadata.cpp
     src/MeshValidator.cpp
     src/ObjExporter.cpp
@@ -66,4 +67,5 @@ target_link_libraries(CodeForces_Mesh_Handler
     TBB::tbb
     TBB::tbbmalloc
     CGAL::TBB_support
+    nlohmann_json::nlohmann_json
 )

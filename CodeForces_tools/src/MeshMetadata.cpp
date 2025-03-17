@@ -28,3 +28,37 @@ bool MeshMetadata::removeGroupMetadata(const std::string& groupName) {
 const std::map<std::string, GroupMetadata>& MeshMetadata::getAllMetadata() const {
     return groupMetadataMap;
 }
+
+json MeshMetadata::toJson() const {
+    json j;
+    for (const auto& pair : groupMetadataMap) {
+        const GroupMetadata& group = pair.second;
+        json jGroup;
+        jGroup["groupName"] = group.groupName;
+        jGroup["boundaryCondition"] = {
+            {"type", group.boundaryCondition.type},
+            {"parameters", group.boundaryCondition.parameters}
+        };
+        jGroup["materialProperties"] = {
+            {"density", group.materialProperties.density},
+            {"elasticModulus", group.materialProperties.elasticModulus},
+            {"poissonRatio", group.materialProperties.poissonRatio}
+        };
+        jGroup["elementTags"] = group.elementTags;
+        jGroup["faceIndices"] = group.faceIndices;
+        jGroup["spatialData"] = json::array();
+        for (const auto& fsd : group.spatialData) {
+            json jFsd;
+            jFsd["faceIndex"] = fsd.faceIndex;
+            jFsd["centroid"] = {fsd.centroid[0], fsd.centroid[1], fsd.centroid[2]};
+            jFsd["vertices"] = json::array();
+            for (const auto &vert : fsd.vertices) {
+                jFsd["vertices"].push_back({vert[0], vert[1], vert[2]});
+            }
+            jGroup["spatialData"].push_back(jFsd);
+        }
+        // Use group name as the key.
+        j[group.groupName] = jGroup;
+    }
+    return j;
+}
