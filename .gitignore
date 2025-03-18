@@ -41,15 +41,14 @@
 
 # VS Code folder
 .vscode/
-CodeForces_tools/.vscode/
 
 # build folder
-build/
+MeshX/build/*
 
 # Exception for .obj files in examples folder
-!CodeForces_tools/examples/*.obj
+!MeshX/examples/*.obj
+!MeshX/examples/Updated/*.obj
 
+MeshX/latex/*
 
-CGAL_testing/*
-
-CodeForces_tools/latex/*
+MeshX/third-party/*
