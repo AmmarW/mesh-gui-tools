@@ -1,54 +1,68 @@
-### Shared Repo for MEEN-689: Applied Computing Concepts
+### MEEN-689: Applied Computing Concepts (Spring 2025)
 
-#### Group Members
+#### Team Members
 - Ammar Waheed
 - Harsh Mittal
 - Jasdeep Bajaj
 - Mohini Priya Kolluri
 - Shivam Vashi
 
-### Build Instructions for Branch 'GUI'
+### Build Status
+
+| Feature                                    | Status     |
+|--------------------------------------------|------------|
+| Surface Meshes Import/Export Handling      | ![Completed](https://img.shields.io/badge/status-completed-brightgreen)  |
+| Mesh Validation                            | ![Completed](https://img.shields.io/badge/status-completed-brightgreen)  |
+| Transformation (Translation/Rotation/Scaling) | ![Completed](https://img.shields.io/badge/status-completed-brightgreen)  |
+| Boolean Operations (Union/Intersection/Difference) | ![Completed](https://img.shields.io/badge/status-completed-brightgreen)  |
+| Volume Mesh Generation                     | ![Completed](https://img.shields.io/badge/status-completed-brightgreen)  |
+| Graphical User Interface (GUI)             | ![Completed](https://img.shields.io/badge/status-completed-brightgreen)  |
+| Documentation                              | ![Completed](https://img.shields.io/badge/status-completed-brightgreen)  |
+
+### Clone Instructions
+
+Make sure you clone with `--recurse-submodules` enabled to get the required libraries:
+
+```sh
+git clone --recurse-submodules link/to/repo
+```
+
+### Build Instructions
 
 #### For Windows (using VS 2022):
 
-1. Navigate to the project directory:
-    ```sh
-    cd CodeForces_tools
-    ```
-2. Generate the build files:
-    ```sh
-    cmake -S . -B build -G "Visual Studio 17 2022"
-    ```
-3. Build the project:
-    ```sh
-    cmake --build build --config Release
-    ```
+```sh
+# Navigate to the project directory
+cd CodeForces_tools
 
-The resulting executable `CodeForces_Mesh_Handler.exe` can be found in the `build\Release` directory.
+# Generate the build files
+cmake -S . -B build -G "Visual Studio 17 2022"
+
+# Build the project
+cmake --build build --config Release
+```
+
+The resulting executable `MeshX.exe` can be found in the `build\Release` directory.
 ### CGAL Setup
 
-1. Clone the vcpkg repository:
-    ```sh
-    git clone https://github.com/microsoft/vcpkg.git
-    ```
-2. Navigate to the vcpkg directory:
-    ```sh
-    cd .\vcpkg\
-    ```
-3. Bootstrap vcpkg:
-    ```sh
-    .\bootstrap-vcpkg.bat -disableMetrics
-    ```
-4. Set environment variables:
-    ```sh
-    $env:VCPKG_ROOT = "C:\vcpkg"
-    $env:PATH = "$env:VCPKG_ROOT;$env:PATH"
-    ```
-5. Install CGAL and TBB:
-    ```sh
-    vcpkg install cgal
-    vcpkg install tbb
-    ```
+```sh
+# Clone the vcpkg repository
+git clone https://github.com/microsoft/vcpkg.git
+
+# Navigate to the vcpkg directory
+cd .\vcpkg\
+
+# Bootstrap vcpkg
+.\bootstrap-vcpkg.bat -disableMetrics
+
+# Set environment variables
+$env:VCPKG_ROOT = "C:\vcpkg"
+$env:PATH = "$env:VCPKG_ROOT;$env:PATH"
+
+# Install CGAL and TBB
+vcpkg install cgal
+vcpkg install tbb
+```
 
 ### Confirm Location and Add System and Environment Paths
 
@@ -66,7 +80,7 @@ Ensure the following paths are added to your system and environment variables:
      # build using VS (version)
      cmake -S . -B build -G "Visual Studio 17 2022"
      # specify vcpkg if build fails
-     cmake -B build -S . -DCMAKE_PREFIX_PATH=C:/path-to/vcpkg/installed/x64-windows
+     cmake -B build -S . -DCMAKE_PREFIX_PATH=C:/path/to/vcpkg/installed/x64-windows
      ```
 2. Build the project:
     ```sh
