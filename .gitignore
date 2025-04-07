@@ -43,7 +43,7 @@
 .vscode/
 
 # build folder
-MeshX/build/*
+*/build/*
 
 # Exception for .obj files in examples folder
 !MeshX/examples/*.obj
