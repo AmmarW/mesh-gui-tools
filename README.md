@@ -7,19 +7,49 @@
 - Mohini Priya Kolluri
 - Shivam Vashi
 
-### Build Status
 
-| Feature                                    | Status     |
-|--------------------------------------------|------------|
-| Surface Meshes Import/Export Handling      | ![Completed](https://img.shields.io/badge/status-completed-brightgreen)  |
-| Mesh Validation                            | ![Completed](https://img.shields.io/badge/status-completed-brightgreen)  |
-| Transformation (Translation/Rotation/Scaling) | ![Completed](https://img.shields.io/badge/status-completed-brightgreen)  |
-| Boolean Operations (Union/Intersection/Difference) | ![Completed](https://img.shields.io/badge/status-completed-brightgreen)  |
-| Volume Mesh Generation                     | ![Completed](https://img.shields.io/badge/status-completed-brightgreen)  |
-| Graphical User Interface (GUI)             | ![Completed](https://img.shields.io/badge/status-completed-brightgreen)  |
-| Documentation                              | ![Completed](https://img.shields.io/badge/status-completed-brightgreen)  |
+## Repository Overview
 
-### Clone Instructions
+This repository contains two main projects:
+
+1. **HeatStack**: A thermal simulation and analysis tool.
+2. **MeshX**: A mesh processing and manipulation tool.
+
+Each project has its own dedicated README file with detailed instructions and documentation.
+
+---
+
+## HeatStack Project
+
+### Description
+
+HeatStack is a thermal simulation tool designed to analyze heat transfer in complex systems. It supports features such as:
+
+- Thermal simulation for steady-state and transient conditions.
+- Material property customization.
+- Visualization of temperature distribution.
+
+For more details, refer to the [HeatStack README](./HeatStack/README.md).
+
+---
+
+## MeshX Project
+
+### Description
+
+MeshX is a mesh processing tool that provides advanced capabilities for handling and manipulating 3D meshes. It supports:
+
+- Surface mesh import/export handling.
+- Mesh validation and transformations (translation, rotation, scaling).
+- Boolean operations (union, intersection, difference).
+- Volume mesh generation.
+- A graphical user interface (GUI) for ease of use.
+
+For more details, refer to the [MeshX README](./MeshX/README.md).
+
+---
+
+## Clone Instructions
 
 Make sure you clone with `--recurse-submodules` enabled to get the required libraries:
 
@@ -27,62 +57,4 @@ Make sure you clone with `--recurse-submodules` enabled to get the required libr
 git clone --recurse-submodules link/to/repo
 ```
 
-### Build Instructions
-
-#### For Windows (using VS 2022):
-
-```sh
-# Navigate to the project directory
-cd CodeForces_tools
-
-# Generate the build files
-cmake -S . -B build -G "Visual Studio 17 2022"
-
-# Build the project
-cmake --build build --config Release
-```
-
-The resulting executable `MeshX.exe` can be found in the `build\Release` directory.
-### CGAL Setup
-
-```sh
-# Clone the vcpkg repository
-git clone https://github.com/microsoft/vcpkg.git
-
-# Navigate to the vcpkg directory
-cd .\vcpkg\
-
-# Bootstrap vcpkg
-.\bootstrap-vcpkg.bat -disableMetrics
-
-# Set environment variables
-$env:VCPKG_ROOT = "C:\vcpkg"
-$env:PATH = "$env:VCPKG_ROOT;$env:PATH"
-
-# Install CGAL and TBB
-vcpkg install cgal
-vcpkg install tbb
-```
-
-### Confirm Location and Add System and Environment Paths
-
-Ensure the following paths are added to your system and environment variables:
-
-- `C:\vcpkg`
-- `C:\vcpkg\packages\gmp_x64-windows\bin`
-- `C:\vcpkg\packages\mpfr_x64-windows\bin`
-- `C:\vcpkg\installed\x64-windows\bin`
-
-### CGAL Build
-
-1. Configure the project with vcpkg:
-    ```sh
-     # build using VS (version)
-     cmake -S . -B build -G "Visual Studio 17 2022"
-     # specify vcpkg if build fails
-     cmake -B build -S . -DCMAKE_PREFIX_PATH=C:/path/to/vcpkg/installed/x64-windows
-     ```
-2. Build the project:
-    ```sh
-    cmake --build build --config Release
-    ```
+---
