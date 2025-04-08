@@ -29,3 +29,13 @@ HeatStack is a computational framework designed for solving heat transfer proble
     ```sh
      # build using VS (version)
      cmake -S . -B build -G "Visual Studio 17 2022"
+
+
+
+- Work divide:
+
+Ammar - BTCSMatrixSolver.cpp, HeatEquationSolver.cpp
+Jasdeep - MeshHandler.cpp, BoundaryCondition.cpp
+Harsh - main.cpp, CLI.cpp, TimeHandler.cpp
+Shivam - InitialTemperature.cpp, TemperatureDistribution.cpp
+Mohini - TemperatureComparator.cpp, HeatEquationSolver.cpp
