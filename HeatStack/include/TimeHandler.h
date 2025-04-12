@@ -1,23 +1,29 @@
-#ifndef TIME_HANDLER_H
-#define TIME_HANDLER_H
+#pragma once
 
 class TimeHandler {
 public:
-    TimeHandler();
-    ~TimeHandler();
+    TimeHandler(double totalTime, double initialTimeStep, bool adaptive = false);
 
-    // Set fixed time step
-    void setTimeStep(double dt);
+    // Advance the simulation time
+    void advance();
 
-    // Enable or disable adaptive time stepping
-    void setAdaptiveTimeStep(bool adaptive);
-
-    // Return the current time step value
+    // Accessors
+    double getCurrentTime() const;
     double getTimeStep() const;
+    double getTotalTime() const;
+    int getStepCount() const;
+
+    // Adaptive timestep control (stub for now)
+    void adjustTimeStep(double newTimeStep); // Can be used by solver based on stability
+    bool isAdaptive() const;
+
+    // Check if simulation is complete
+    bool isFinished() const;
 
 private:
-    double timeStep;
+    double totalTime;
+    double dt;
+    double currentTime;
     bool adaptive;
+    int stepCount;
 };
-
-#endif // TIME_HANDLER_H
