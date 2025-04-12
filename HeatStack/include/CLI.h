@@ -1,18 +1,25 @@
-#ifndef CLI_H
-#define CLI_H
+#pragma once
+#include <string>
 
-// Command-line interface (CLI) for the HeatStack application.
 class CLI {
 public:
-    CLI();
-    ~CLI();
+    CLI(int argc, char* argv[]);
 
-    // Run the CLI.
-    void run();
+    std::string getMeshFile() const;
+    double getTimeDuration() const;
+    double getTimeStep() const;
+    bool useAdaptiveTimeStep() const;
+    std::string getOutputFile() const;
+    bool isHelpRequested() const;
 
 private:
-    // Display help information.
-    void showHelp() const;
-};
+    void parseArguments(int argc, char* argv[]);
+    void printUsage() const;
 
-#endif // CLI_H
+    std::string meshFile;
+    double timeDuration = 0.0;
+    double timeStep = 0.0;
+    bool adaptiveTimeStep = false;
+    std::string outputFile = "output.txt";
+    bool helpRequested = false;
+};
