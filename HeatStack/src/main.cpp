@@ -12,7 +12,7 @@ int main(int argc, char* argv[]) {
 
     try {
         // Load initial temperature data from the CSV file
-        std::vector<double> temperatures = initialTempHandler.loadInitialTemperature("initial_temperature.csv");
+        std::vector<double> temperatures = initialTempHandler.loadInitialTemperature("../src/initial_temperature.csv");
 
         // Initialize the temperature distribution with the loaded data
         tempDistHandler.initialize(temperatures.size(), 0.0); // Initialize with default value (0.0)
@@ -41,7 +41,7 @@ int main(int argc, char* argv[]) {
 
         // Export the temperature distribution to a file
         tempDistHandler.exportToFile("exported_temperature_distribution.csv");
-        std::cout << "Temperature distribution exported to 'exported_temperature_distribution.csv'." << std::endl;
+        std::cout << "Temperature distribution exported to 'build/exported_temperature_distribution.csv'." << std::endl;
 
     } catch (const std::exception &e) {
         std::cerr << e.what() << std::endl;

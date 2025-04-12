@@ -37,7 +37,7 @@
 
 # Excel Files
 *.xls
-*.csv
+
 
 # VS Code folder
 .vscode/
