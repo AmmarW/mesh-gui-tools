@@ -1,0 +1,7 @@
+*.css linguist-ignore
+*.html linguist-ignore
+*.js linguist-ignore
+
+*.html -linguist-detectable
+*.css -linguist-detectable
+*.js -linguist-detectable
