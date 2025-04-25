@@ -12,41 +12,77 @@ HeatStack is a computational framework designed for solving heat transfer proble
 ## Project File Structure
 
 HeatStack/
+
 ├── **`include/`**: Header files for the project.
+
 │   ├── BTCSMatrixSolver.h
+
 │   ├── BoundaryConditions.h
+
 │   ├── CLI.h
+
 │   ├── HeatEquationSolver.h
+
 │   ├── InitialTemperature.h
+
 │   ├── MaterialProperties.h
+
 │   ├── MeshHandler.h
+
 │   ├── SafetyArbitrator.h
+
 │   ├── TemperatureComparator.h
+
 │   ├── TemperatureDistribution.h
+
 │   ├── TimeHandler.h
+
 ├── **`src/`**: Source code implementation.
+
 │   ├── BTCSMatrixSolver.cpp
+
 │   ├── BoundaryConditions.cpp
+
 │   ├── CLI.cpp
+
 │   ├── HeatEquationSolver.cpp
+
 │   ├── InitialTemperature.cpp
+
 │   ├── MaterialProperties.cpp
+
 │   ├── MeshHandler.cpp
+
 │   ├── SafetyArbitrator.cpp
+
 │   ├── TemperatureComparator.cpp
+
 │   ├── TemperatureDistribution.cpp
+
 │   ├── TimeHandler.cpp
+
 │   ├── main.cpp
+
 │   ├── initial_temperature.csv
+
 ├── **`tests/`**: Unit tests for the project.
+
 │   ├── test_boundary_conditions.cpp
+
 │   ├── test_humanoid_mesh.cpp
+
 │   ├── test_main.cpp
+
 │   ├── test_material_properties.cpp
+
 │   ├── test_heat_equation_solver.cpp
+
 │   ├── CMakeLists.txt
+
 ├── .gitignore
+
 ├── README.md
+
 ├── **`build/`**: Build files and compiled binaries.
 
 
