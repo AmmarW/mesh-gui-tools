@@ -3,7 +3,7 @@
 
 #include <vector>
 
-// Custom class for efficient BTCS method matrix operations.
+// Custom class for efficient BTCS method matrix operations using Thomas algorithm.
 class BTCSMatrixSolver {
 public:
     BTCSMatrixSolver();
@@ -12,14 +12,14 @@ public:
     // Setup the solver matrix with the given size.
     void setupMatrix(int size);
 
-    // Solve the matrix equation A * x = b.
-    // This is a placeholder for a custom, efficient inversion or solver method.
+    // Solve the tridiagonal matrix equation A * x = b using Thomas algorithm.
     std::vector<double> solve(const std::vector<double>& b);
 
 private:
     int matrixSize;
-    // Internal matrix representation. This can later be replaced with a more optimized structure.
-    std::vector<std::vector<double>> A;
+    std::vector<double> a_; // Sub-diagonal
+    std::vector<double> b_; // Main diagonal
+    std::vector<double> c_; // Super-diagonal
 };
 
 #endif // BTCS_MATRIX_SOLVER_H
