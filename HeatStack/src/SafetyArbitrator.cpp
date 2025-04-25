@@ -4,7 +4,8 @@ SafetyArbitrator::SafetyArbitrator() {}
 
 SafetyArbitrator::~SafetyArbitrator() {}
 
-bool SafetyArbitrator::evaluate(const std::vector<double>& temperatureDistribution) {
-    // Placeholder: Implement safety evaluation logic.
-    return true;
+bool SafetyArbitrator::evaluate(const std::vector<double>& temperatureDistribution, double maxTemp) {
+    // Check the inner steel surface temperature
+    double steelTemp = temperatureDistribution.back();
+    return steelTemp < maxTemp;
 }
