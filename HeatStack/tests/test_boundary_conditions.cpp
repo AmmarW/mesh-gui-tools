@@ -18,18 +18,9 @@ void testNeumann() {
     std::cout << "Neumann test passed.\n";
 }
 
-void testRobin() {
-    RobinCondition robin(0.5f, 25.0f);  // h = 0.5, T_ext = 25
-    std::array<float, 3> pos = {1.0, 1.0, 0.5};
-    assert(robin.getType() == BoundaryType::Robin);
-    assert(robin.getValue(pos) == 12.5f);  // 0.5 * 25
-    std::cout << "Robin test passed.\n";
-}
-
 int main() {
     testDirichlet();
     testNeumann();
-    testRobin();
     std::cout << "All boundary condition tests passed.\n";
     return 0;
 }

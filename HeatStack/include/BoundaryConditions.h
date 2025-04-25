@@ -5,8 +5,7 @@
 
 enum class BoundaryType {
     Dirichlet,
-    Neumann,
-    Robin
+    Neumann
 };
 
 class BoundaryCondition {
@@ -42,18 +41,5 @@ private:
     float flux_;
 };
 
-// Robin: heat exchange (h * (T_ext - T))
-class RobinCondition : public BoundaryCondition {
-public:
-    RobinCondition(float h, float externalTemp);
-    ~RobinCondition() override;
-
-    BoundaryType getType() const override;
-    float getValue(const std::array<float, 3>& position) const override;
-
-private:
-    float h_;
-    float externalTemp_;
-};
 
 #endif // BOUNDARY_CONDITIONS_H
