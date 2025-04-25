@@ -1,52 +1,59 @@
 #ifndef BOUNDARY_CONDITIONS_H
 #define BOUNDARY_CONDITIONS_H
 
-// Enumeration for boundary condition types.
+#include <array>
+
 enum class BoundaryType {
     Dirichlet,
     Neumann,
     Robin
 };
 
-// Base class for boundary conditions.
 class BoundaryCondition {
 public:
     virtual ~BoundaryCondition() {}
     virtual BoundaryType getType() const = 0;
-    // Placeholder: Define interface for applying boundary conditions.
+    virtual float getValue(const std::array<float, 3>& position) const = 0;
 };
 
-// Dirichlet boundary condition placeholder.
+// Dirichlet: fixed temperature
 class DirichletCondition : public BoundaryCondition {
 public:
-    DirichletCondition();
+    DirichletCondition(float temperature);
     ~DirichletCondition() override;
 
     BoundaryType getType() const override;
+    float getValue(const std::array<float, 3>& position) const override;
 
-    // Placeholder: Additional methods for Dirichlet BC.
+private:
+    float temperature_;
 };
 
-// Neumann boundary condition placeholder.
+// Neumann: fixed heat flux
 class NeumannCondition : public BoundaryCondition {
 public:
-    NeumannCondition();
+    NeumannCondition(float flux);
     ~NeumannCondition() override;
 
     BoundaryType getType() const override;
+    float getValue(const std::array<float, 3>& position) const override;
 
-    // Placeholder: Additional methods for Neumann BC.
+private:
+    float flux_;
 };
 
-// Robin boundary condition placeholder.
+// Robin: heat exchange (h * (T_ext - T))
 class RobinCondition : public BoundaryCondition {
 public:
-    RobinCondition();
+    RobinCondition(float h, float externalTemp);
     ~RobinCondition() override;
 
     BoundaryType getType() const override;
+    float getValue(const std::array<float, 3>& position) const override;
 
-    // Placeholder: Additional methods for Robin BC.
+private:
+    float h_;
+    float externalTemp_;
 };
 
 #endif // BOUNDARY_CONDITIONS_H
