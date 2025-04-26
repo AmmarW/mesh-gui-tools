@@ -6,6 +6,12 @@
 
 MeshHandler::MeshHandler() {}
 
+MeshHandler::MeshHandler(const std::string& filename) {
+    if (!loadMesh(filename)) {
+        std::cerr << "Error: Failed to load mesh from file: " << filename << std::endl;
+    }
+}
+
 MeshHandler::~MeshHandler() {}
 
 bool MeshHandler::loadMesh(const std::string &filename) {

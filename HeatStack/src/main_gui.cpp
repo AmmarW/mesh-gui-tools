@@ -78,11 +78,11 @@ void launch_gui() {
             // Call HeatStack modules here
             MeshHandler meshHandler(meshPath);
             InitialTemperature initTemp(initTempPath);
-            BoundaryConditions boundary;
+            DirichletCondition boundary(100.0f); // Example Dirichlet condition
             TimeHandler time(simDuration, timeStep);
-            HeatEquationSolver solver(meshHandler, boundary, initTemp, time);
-            solver.solve();
-            solver.saveResults(outputPath);
+            // HeatEquationSolver solver(meshHandler, boundary, initTemp, time);
+            // solver.solve();
+            // solver.saveResults(outputPath);
             runSimulation = false;
         }
     }

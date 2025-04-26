@@ -45,7 +45,7 @@ std::vector<double> TemperatureComparator::runSimulation(Stack stack, double dur
 
     // Set boundary conditions (Dirichlet with exhaust gas temp, Neumann)
     double T_surface = -100 * std::log(8 * l_over_L + 1) + 900; // Exhaust gas temperature
-    solver.setBoundaryConditions(new DirichletCondition(T_surface), new NeumannCondition(0.0));
+    solver.setBoundaryConditions(new DirichletCondition(static_cast<float>(T_surface)), new NeumannCondition(0.0f));
 
     // Run simulation
     while (!timeHandler.isFinished()) {

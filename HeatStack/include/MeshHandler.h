@@ -8,6 +8,7 @@
 class MeshHandler {
 public:
     MeshHandler();
+    MeshHandler(const std::string& filename); // New constructor
     ~MeshHandler();
 
     // Loads a mesh from a .obj file

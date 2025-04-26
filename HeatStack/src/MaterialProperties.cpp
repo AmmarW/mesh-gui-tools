@@ -1,4 +1,5 @@
 #include "MaterialProperties.h"
+#include "utils.h"
 #include <fstream>
 #include <sstream>
 #include <cmath>

@@ -1,6 +1,8 @@
 #include "HeatEquationSolver.h"
+#include "utils.h"
 #include <stdexcept>
 #include <cmath>
+
 
 HeatEquationSolver::HeatEquationSolver(double theta) 
     : theta_(theta), problemSize_(0), outerBC_(nullptr), innerBC_(nullptr), timeHandler_(0.0, 1.0, false) {}
@@ -12,7 +14,7 @@ HeatEquationSolver::~HeatEquationSolver() {
 
 void HeatEquationSolver::initialize(const Stack& stack, const TimeHandler& timeHandler) {
     stack_ = stack;
-    problemSize_ = stack.xGrid.size();
+    problemSize_ = static_cast<int>(stack.xGrid.size()); // Explicit cast to int
     timeHandler_ = timeHandler;
     temperature_.resize(problemSize_, 0.0);
     prevTemperature_.resize(problemSize_, 0.0);
