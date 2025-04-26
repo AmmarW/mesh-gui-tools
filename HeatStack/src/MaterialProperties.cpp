@@ -28,6 +28,12 @@ MaterialProperties::MaterialProperties() {
 
 MaterialProperties::~MaterialProperties() {}
 
+
+// Exhaust gas temperature profile from MATLAB: T = -100*log(8*l+1)+900
+double MaterialProperties::getExhaustTemp(double l_over_L) const {
+        return -100.0 * std::log(8.0 * l_over_L + 1.0) + 900.0;
+    }
+
 void MaterialProperties::loadStacks(const std::string& filename) {
     // Placeholder: Read stack configurations from a file
     std::ifstream file(filename);
@@ -68,14 +74,14 @@ double MaterialProperties::getCarbonFiberThickness(double l_over_L) const {
     double A = 0.015; // 1.5 cm
     double f = 1.0;   // 1 Hz
     double t = l_over_L * 2.5;
-    return (std::abs(A * std::sin(2 * M_PI * f * t)) + 0.001) / 100.0; // cm to m
+    return (std::abs(A * std::sin(2 * M_PI * f * t)) + 0.001);
 }
 
 double MaterialProperties::getGlueThickness(double l_over_L) const {
     double A = 0.001; // 0.1 cm
     double B = 20.0;
     double C = 0.0001; // 0.01 cm
-    return (A * std::log(B * l_over_L + 1) + C) / 100.0; // cm to m
+    return (A * std::log(B * l_over_L + 1) + C);
 }
 
 double MaterialProperties::getSteelThickness(double l_over_L) const {
@@ -83,5 +89,5 @@ double MaterialProperties::getSteelThickness(double l_over_L) const {
     double f = 5.0;   // 5 Hz
     double t = l_over_L * 2.5;
     double sawtooth = 2 * (f * t - std::floor(f * t)) - 1;
-    return ((A / 2) * (sawtooth + 1) + 0.001) / 100.0; // cm to m
+    return ((A / 2) * (sawtooth + 1) + 0.001);
 }

@@ -2,7 +2,7 @@
 #include "utils.h"
 #include <stdexcept>
 #include <cmath>
-
+#include <iostream> 
 
 HeatEquationSolver::HeatEquationSolver(double theta) 
     : theta_(theta), problemSize_(0), outerBC_(nullptr), innerBC_(nullptr), timeHandler_(0.0, 1.0, false) {}
@@ -35,19 +35,91 @@ void HeatEquationSolver::setBoundaryConditions(BoundaryCondition* outerBC, Bound
 }
 
 void HeatEquationSolver::step() {
+    // std::cerr << "[debug] xGrid[0..3] = "
+    // << stack_.xGrid[0] << ", "
+    // << stack_.xGrid[1] << ", "
+    // << stack_.xGrid[2] << ", "
+    // << stack_.xGrid[3] << "\n";
+
     double dt = timeHandler_.getTimeStep();
-    std::vector<std::vector<double>> A(problemSize_, std::vector<double>(problemSize_, 0.0));
-    std::vector<double> b(problemSize_, 0.0);
+    int n = problemSize_;
 
-    // Setup matrix A and RHS b
-    setupMatrix(A, dt);
-    setupRHS(b, dt);
-    applyBoundaryConditions(A, b, dt);
+    // 1) Resize tridiagonal and RHS
+    matrixSolver_.setupMatrix(n);
+    std::vector<double> rhs(n, 0.0);
+    std::vector<double> a(n-1, 0.0), b(n, 0.0), c(n-1, 0.0);
 
-    // Solve AX = B
-    temperature_ = matrixSolver_.solve(b);
+    // 2) Fill interior rows
+    for (int i = 1; i < n - 1; ++i) {
+        double dxl   = stack_.xGrid[i]   - stack_.xGrid[i - 1];
+        double dxr   = stack_.xGrid[i+1] - stack_.xGrid[i];
+        double dxm   = 0.5 * (dxl + dxr);
+        double alpha = getThermalDiffusivity(i);
+        double mydt  = timeHandler_.getTimeStep();
+    
+        // DEBUG: print out everything that goes into r
+        // std::cerr << "[debug] i=" << i
+        //           << "  dt="    << mydt
+        //           << "  dxl="   << dxl
+        //           << "  dxr="   << dxr
+        //           << "  dxm="   << dxm
+        //           << "  alpha=" << alpha
+        //           << "\n";
+    
+        // sanity‐guard
+        if (dxm <= 0 || std::isnan(dxm) || std::isnan(alpha) || std::isnan(mydt)) {
+            throw std::runtime_error("Invalid grid spacing or diffusivity at index " + std::to_string(i));
+        }
+    
+        double r = alpha * mydt / (dxm * dxm);
+        a[i-1] = -theta_ * r;
+        b[i]   =  1 + 2 * theta_ * r;
+        c[i]   = -theta_ * r;
+    
+        rhs[i] = temperature_[i]
+               + (1 - theta_) * r
+                 * (temperature_[i-1] - 2*temperature_[i] + temperature_[i+1]);
+    }
+    
 
-    // Update previous temperature for error estimation
+    // 3) Dirichlet outer BC
+    if (outerBC_->getType() == BoundaryType::Dirichlet) {
+        double T0 = dynamic_cast<DirichletCondition*>(outerBC_)->getValue({0,0,0});
+        b[0]   = 1.0;
+        rhs[0] = T0;
+        c[0]   = 0.0;
+    }
+
+    // 4) Neumann inner BC
+    if (innerBC_->getType() == BoundaryType::Neumann) {
+        int i = n - 1;
+        double dx = stack_.xGrid[i] - stack_.xGrid[i-1];
+        double alpha = getThermalDiffusivity(i);
+        double r = alpha * dt / (dx * dx);
+
+        a[i-1] = -2 * theta_ * r;
+        b[i]   = 1 + 2 * theta_ * r;
+        rhs[i] = temperature_[i]
+               + (1 - theta_) * r * (temperature_[i-1] - 2 * temperature_[i] + temperature_[i-1]);
+    }
+
+    // Debug: print first few diagonal entries
+    // {
+    //     std::cerr << "HeatEquationSolver::step() diagonals b[0..2] = ";
+    //     int count = std::min(n, 3);
+    //     for (int idx = 0; idx < count; ++idx) {
+    //         std::cerr << b[idx] << (idx < count - 1 ? ", " : "");
+    //     }
+    //     std::cerr << std::endl;
+    // }
+
+    // 5) Push into solver
+    matrixSolver_.a_ = std::move(a);
+    matrixSolver_.b_ = std::move(b);
+    matrixSolver_.c_ = std::move(c);
+
+    // 6) Solve and update
+    temperature_ = matrixSolver_.solve(rhs);
     prevTemperature_ = temperature_;
 
     // Adjust time step if adaptive
@@ -55,6 +127,7 @@ void HeatEquationSolver::step() {
         adjustTimeStep();
     }
 }
+
 
 const std::vector<double>& HeatEquationSolver::getTemperatureDistribution() const {
     return temperature_;

@@ -15,11 +15,15 @@ public:
     // Solve the tridiagonal matrix equation A * x = b using Thomas algorithm.
     std::vector<double> solve(const std::vector<double>& b);
 
-private:
-    int matrixSize;
+    // making public for testing
     std::vector<double> a_; // Sub-diagonal
     std::vector<double> b_; // Main diagonal
     std::vector<double> c_; // Super-diagonal
+private:
+    int matrixSize;
+    // std::vector<double> a_; // Sub-diagonal
+    // std::vector<double> b_; // Main diagonal
+    // std::vector<double> c_; // Super-diagonal
 };
 
 #endif // BTCS_MATRIX_SOLVER_H

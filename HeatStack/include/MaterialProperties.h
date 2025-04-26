@@ -55,6 +55,9 @@ public:
     double getMinTPSThickness() const { return 0.0001; } // 0.01 cm
     double getMaxTPSThickness() const { return 0.01; }   // 1 cm
 
+    // External surface temperature profile (Dirichlet BC)
+    double getExhaustTemp(double l_over_L) const;
+
 private:
     std::vector<Stack> stacks;  // List of stacks
 };

@@ -28,8 +28,20 @@ void CLI::parseArguments(int argc, char* argv[]) {
             helpRequested = true;
             printUsage();
             break;
+        } //new flags
+        else if (std::strcmp(argv[i], "--init") == 0 && i+1 < argc) {
+            initFile = argv[++i];
         }
-        else {
+        else if (std::strcmp(argv[i], "--slices") == 0 && i+1 < argc) {
+            numSlices = std::atoi(argv[++i]);
+        }
+        else if (std::strcmp(argv[i], "--points") == 0 && i+1 < argc) {
+            pointsPerLayer = std::atoi(argv[++i]);
+        }
+        else if (std::strcmp(argv[i], "--theta") == 0 && i+1 < argc) {
+            theta = std::atof(argv[++i]);
+        }
+        else { //old flags
             std::cerr << "Unknown option: " << argv[i] << "\n";
             helpRequested = true;
             printUsage();
@@ -72,3 +84,8 @@ std::string CLI::getOutputFile() const {
 bool CLI::isHelpRequested() const {
     return helpRequested;
 }
+
+std::string CLI::getInitFile() const       { return initFile; }
+int         CLI::getNumSlices() const     { return numSlices; }
+int         CLI::getPointsPerLayer() const{ return pointsPerLayer; }
+double      CLI::getTheta() const         { return theta; }
