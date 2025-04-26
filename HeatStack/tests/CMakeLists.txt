@@ -1,3 +1,15 @@
+cmake_minimum_required(VERSION 3.10)
+project(HeatStack)
+
+# Set C++ standard
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
+
+set(CMAKE_PREFIX_PATH "C:/vcpkg/installed/x64-windows")
+
+add_subdirectory(third-party/glfw)
+
+
 # Define source files for the main HeatStack library
 set(HEATSTACK_SOURCES
     ../src/BTCSMatrixSolver.cpp

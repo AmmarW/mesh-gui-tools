@@ -1,6 +1,6 @@
-[submodule "MeshX/third-party/imgui"]
-	path = MeshX/third-party/imgui
+[submodule "third-party/imgui"]
+	path = third-party/imgui
 	url = https://github.com/ocornut/imgui.git
-[submodule "MeshX/third-party/glfw"]
-	path = MeshX/third-party/glfw
+[submodule "third-party/glfw"]
+	path = third-party/glfw
 	url = https://github.com/glfw/glfw.git

@@ -19,22 +19,23 @@ include(CGAL_TBB_support)
 
 # Add include directories
 include_directories(include)
-include_directories(third-party/imgui)
-include_directories(third-party/imgui/backends)
-include_directories(third-party/tinyfiledialogs)
+include_directories(../third-party/imgui)
+include_directories(../third-party/imgui/backends)
+include_directories(../third-party/tinyfiledialogs)
 include_directories(C:/vcpkg/installed/x64-windows/include)
 
 # Add subdirectories for third-party libraries
-add_subdirectory(third-party/glfw)
+add_subdirectory(../third-party/glfw ../build/third-party/glfw)
+
 
 # Add source files for third-party libraries
 set(IMGUI_SRC
-    third-party/imgui/imgui.cpp
-    third-party/imgui/imgui_draw.cpp
-    third-party/imgui/imgui_tables.cpp
-    third-party/imgui/imgui_widgets.cpp
-    third-party/imgui/backends/imgui_impl_glfw.cpp
-    third-party/imgui/backends/imgui_impl_opengl3.cpp
+    ../third-party/imgui/imgui.cpp
+    ../third-party/imgui/imgui_draw.cpp
+    ../third-party/imgui/imgui_tables.cpp
+    ../third-party/imgui/imgui_widgets.cpp
+    ../third-party/imgui/backends/imgui_impl_glfw.cpp
+    ../third-party/imgui/backends/imgui_impl_opengl3.cpp
 )
 
 # Add the flag for concurrent mesh
@@ -51,7 +52,7 @@ add_executable(MeshX
     src/ObjExporter.cpp
     src/ObjParser.cpp
     src/MeshTransform.cpp
-    third-party/tinyfiledialogs/tinyfiledialogs.c
+    ../third-party/tinyfiledialogs/tinyfiledialogs.c
     ${IMGUI_SRC}
     src/AdaptiveMeshGenerator.cpp
     src/MeshConverter.cpp
