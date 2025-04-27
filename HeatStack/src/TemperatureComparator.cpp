@@ -9,7 +9,7 @@ TemperatureComparator::TemperatureComparator() {}
 
 TemperatureComparator::~TemperatureComparator() {}
 
-double TemperatureComparator::suggestTPSThickness(const Stack& stack, double maxTemp, double duration, double l_over_L, const MaterialProperties& props) {
+double TemperatureComparator::suggestTPSThickness(const Stack& stack, double maxTemp, double duration, double l_over_L, const MaterialProperties& props, double theta) {
     double minThickness = props.getMinTPSThickness();
     double maxThickness = props.getMaxTPSThickness();
     double tolerance = 0.00001; // 0.001 cm
@@ -20,22 +20,28 @@ double TemperatureComparator::suggestTPSThickness(const Stack& stack, double max
         Stack testStack = stack;
         testStack.layers[0].thickness = thickness;
         MaterialProperties tempProps;
-        tempProps.generateGrid(testStack);
+        tempProps.generateGrid(testStack, compPoints);
 
-        std::vector<double> temperatures = runSimulation(testStack, duration, 0.5, l_over_L);
+        std::vector<double> temperatures = runSimulation(testStack, duration, theta, l_over_L);
         double steelTemp = temperatures.back();
-
+        // std::cerr << "[cmp] steelTemp=" << steelTemp << "\n";
         if (steelTemp < maxTemp) {
             maxThickness = thickness;
         } else {
             minThickness = thickness;
         }
+        
+        // std::cerr << "[cmp] thickness=" << thickness
+        // << "  dt=" << compDt
+        // << "  pts/layer=" << compPoints
+        // << "  run duration=" << duration << "\n";
+
     }
     return thickness;
 }
 
 std::vector<double> TemperatureComparator::runSimulation(Stack stack, double duration, double theta, double l_over_L) {
-    TimeHandler timeHandler(duration, 0.1, true);
+    TimeHandler timeHandler(duration, compDt, compAdapt);
     HeatEquationSolver solver(theta);
     solver.initialize(stack, timeHandler);
 
@@ -47,10 +53,21 @@ std::vector<double> TemperatureComparator::runSimulation(Stack stack, double dur
     double T_surface = -100 * std::log(8 * l_over_L + 1) + 900; // Exhaust gas temperature
     solver.setBoundaryConditions(new DirichletCondition(static_cast<float>(T_surface)), new NeumannCondition(0.0f));
 
+
     // Run simulation
-    while (!timeHandler.isFinished()) {
+    while (!solver.isFinished()) {
         solver.step();
-        timeHandler.advance();
+        // timeHandler.advance();
     }
     return solver.getTemperatureDistribution();
+}
+
+
+void TemperatureComparator::setTimeStep(double dt, bool adaptive) {
+    compDt = dt;
+    compAdapt = adaptive;
+}
+
+void TemperatureComparator::setGridResolution(int pointsPerLayer) {
+    compPoints = pointsPerLayer;
 }

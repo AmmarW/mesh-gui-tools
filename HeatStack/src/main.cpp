@@ -37,7 +37,7 @@ int main(int argc, char* argv[]) {
 
     // Prepare output files
     std::ofstream summaryOut(cli.getOutputFile());
-    summaryOut << "slice,l/L,method,finalSteelTemp,TPS_thickness\n";
+    summaryOut << "slice,l/L,method,finalSteelTemp,TPS_thickness,OriginalSteelTemp\n";
 
     std::ofstream detailsOut("stack_details.csv");
     detailsOut << "slice,l/L,TPS_thickness,CarbonFiber_thickness,Glue_thickness,Steel_thickness,finalSteelTemp\n";
@@ -72,7 +72,7 @@ int main(int argc, char* argv[]) {
         TimeHandler th(tFinal, dt, adapt);
         HeatEquationSolver solver(theta);
         solver.initialize(s, th);
-        
+
         // Set initial temperature
         if (!uniformInit.empty()) {
             solver.setInitialTemperature(uniformInit);
@@ -90,9 +90,9 @@ int main(int argc, char* argv[]) {
         auto solve_start = std::chrono::high_resolution_clock::now();
 
         // Time-marching loop
-        while (!th.isFinished()) {
+        while (!solver.isFinished()) {
             solver.step();
-            th.advance();
+            // th.advance();
         }
 
         auto solve_end = std::chrono::high_resolution_clock::now();
@@ -109,19 +109,38 @@ int main(int argc, char* argv[]) {
 
         // Suggest TPS thickness (optional optimization)
         TemperatureComparator comp;
-        double tpsOpt = comp.suggestTPSThickness(s, 800.0, tFinal, lL, matProps);
+        comp.setTimeStep(cli.getTimeStep(), cli.useAdaptiveTimeStep());
+        comp.setGridResolution(cli.getPointsPerLayer());
+        double tpsOpt = comp.suggestTPSThickness(s, 800.0, tFinal, lL, matProps, theta);
 
-        // Write summary CSV
-        summaryOut << slice+1 << "," << lL << ",BTCS," << steelT << "," << tpsOpt << "\n";
+        // --- NEW: re-run solver at optimized thickness ---
+        s.layers[0].thickness = tpsOpt;
+        matProps.generateGrid(s, pointsPerLayer);
 
-        // Write details CSV
-        detailsOut << slice+1 << ","
-                   << lL    << ","
-                   << tpsThick  << ","
-                   << cfThick   << ","
-                   << glueThick << ","
-                   << steelThick<< ","
-                   << steelT    << "\n";
+        TimeHandler th2(tFinal, dt, adapt);
+        HeatEquationSolver solverOpt(theta);
+        solverOpt.initialize(s, th2);
+        solverOpt.setInitialTemperature(uniformInit.empty()
+            ? std::vector<double>(s.xGrid.size(), 300.0)
+            : uniformInit);
+        solverOpt.setBoundaryConditions(
+            new DirichletCondition(static_cast<float>(matProps.getExhaustTemp(lL))),
+            new NeumannCondition(0.0f)
+        );
+        while (!solverOpt.isFinished()) {
+            solverOpt.step();
+        }
+        double steelOpt = solverOpt.getTemperatureDistribution().back();
+        // --- END NEW ---
+
+        // Write summary CSV with the optimized‐thickness temperature
+        summaryOut 
+        << (slice+1) << ","
+        << lL         << ","
+        << "BTCS"     << ","
+        << steelOpt   << ","   // now from optimized thickness
+        << tpsOpt     << ","
+        << steelT     << "\n"; // add original steel temperature
     }
 
     summaryOut.close();
