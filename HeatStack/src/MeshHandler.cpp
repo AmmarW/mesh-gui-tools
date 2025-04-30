@@ -77,3 +77,35 @@ float MeshHandler::getMaxZ() const {
     }
     return maxZ;
 }
+
+float MeshHandler::getMinX() const {
+    float minX = std::numeric_limits<float>::max();
+    for (const auto& v : vertices) {
+        if (v[0] < minX) minX = v[0];
+    }
+    return minX;
+}
+
+float MeshHandler::getMaxX() const {
+    float maxX = std::numeric_limits<float>::lowest();
+    for (const auto& v : vertices) {
+        if (v[0] > maxX) maxX = v[0];
+    }
+    return maxX;
+}
+
+float MeshHandler::getMinY() const {
+    float minY = std::numeric_limits<float>::max();
+    for (const auto& v : vertices) {
+        if (v[1] < minY) minY = v[1];
+    }
+    return minY;
+}
+
+float MeshHandler::getMaxY() const {
+    float maxY = std::numeric_limits<float>::lowest();
+    for (const auto& v : vertices) {
+        if (v[1] > maxY) maxY = v[1];
+    }
+    return maxY;
+}
