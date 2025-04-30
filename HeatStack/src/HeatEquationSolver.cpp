@@ -256,3 +256,7 @@ double HeatEquationSolver::estimateError(double dt) {
 bool HeatEquationSolver::isFinished() const {
         return timeHandler_.isFinished();
     }
+
+double HeatEquationSolver::getCurrentTime() const {
+    return timeHandler_.getCurrentTime();
+}

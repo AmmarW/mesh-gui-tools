@@ -46,9 +46,9 @@ double TemperatureComparator::suggestTPSThickness(
         double glueThick   = testStack.layers[2].thickness;
         double posCarbonGlue = tpsThick + carbonThick;
         double posGlueSteel  = posCarbonGlue + glueThick;
-        int idxCarbonGlue = std::lower_bound(xGrid.begin(), xGrid.end(), posCarbonGlue)
+        auto idxCarbonGlue = std::lower_bound(xGrid.begin(), xGrid.end(), posCarbonGlue)
                           - xGrid.begin();
-        int idxGlueSteel  = std::lower_bound(xGrid.begin(), xGrid.end(), posGlueSteel)
+        auto idxGlueSteel  = std::lower_bound(xGrid.begin(), xGrid.end(), posGlueSteel)
                           - xGrid.begin();
         double carbonTemp = temperatures[idxCarbonGlue];
         double glueTemp   = temperatures[idxGlueSteel];
