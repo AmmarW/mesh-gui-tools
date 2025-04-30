@@ -37,6 +37,8 @@ HeatStack/
 
 │   ├── TimeHandler.h
 
+│   ├── Utils.h
+
 ├── **`src/`**: Source code implementation.
 
 │   ├── BTCSMatrixSolver.cpp
@@ -63,7 +65,7 @@ HeatStack/
 
 │   ├── main.cpp
 
-│   ├── initial_temperature.csv
+│   ├── main_gui.cpp
 
 ├── **`tests/`**: Unit tests for the project.
 
@@ -91,47 +93,39 @@ HeatStack/
 ### Inputs
 - Mesh file (.obj): Robot surface mesh in .obj format, processed by MeshHandler.
 
-
-
 - Stack configuration (via MaterialProperties): Each stack (TPS, carbon-fiber, glue, steel) has varying thicknesses based on l/L (head to toe, L=2.5m).
 
+- Boundary conditions:
+    - Dirichlet (exhaust gas temperature at time=0) on TPS surface
+    - Neumann (zero flux) on steel surface.
 
 
-- Boundary conditions: Dirichlet (exhaust gas temperature at t=0, then 300K water) on TPS surface, Neumann (zero flux) on steel surface.
-
-
-
-- Initial Conditions: 
-
-    - Initial temperature is 300K (room temperature) for stacks
-
-    - Initial external temperature profile head to toe (via MaterialProperties)
-
+- Initial Conditions:
+  
+    - Initial temperature of Humanoid: 300K (room temperature) for all stacks and materials
+    - Initial external temperature profile head to toe (via MaterialProperties) 
 
 - Simulation Parameters: 
 
     - Simulation durations: 1, 3, 7 hours.
-
-    - Grid Spacing: Non-uniform, constant
-
+    - Grid Spacing: Non-uniform across stacks - 10 grid points distributed uniformly per material.
     - Time Step Size: Adaptive (while satisfying CFL stability and error criteria)
 
 
 ### Goals: 
-- Solve 1D-Heat Equation 
-    - Via BTCS or Crank Nicholson Schemes 
-
+- Solve 1D-Heat Equation (vis Theta-Method)
+    - Via BTCS (theta = 0.5)  or Crank Nicholson Schemes (theta = 1)
     - Tridiagonal matrix inversion 
 
-- Minimize TPS thickness to keep steel temperature < 800K.
+- Minimize TPS thickness to ensure survivability via temperature checks:
+    - Steel < 800K, Glue < 400K and Carbon-fiber < 350K
 
-- Optimize number of stacks from head to toe (test 100, 500, 1000).
 
 ### Outputs
 
-- Temperature distributions across stack depth
-
+- Temperature distributions across stack depth as a function of simulation time
 - TPS thickness profile
+
 
 ## Getting Started
 
