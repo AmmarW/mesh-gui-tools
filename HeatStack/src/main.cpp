@@ -8,6 +8,7 @@
 #include <fstream>
 #include <vector>
 #include <chrono>
+#include <algorithm> 
 
 int main(int argc, char* argv[]) {
     // Overall timer start
@@ -40,7 +41,9 @@ int main(int argc, char* argv[]) {
     summaryOut << "slice,l/L,method,finalSteelTemp,TPS_thickness,OriginalSteelTemp\n";
 
     std::ofstream detailsOut("stack_details.csv");
-    detailsOut << "slice,l/L,TPS_thickness,CarbonFiber_thickness,Glue_thickness,Steel_thickness,finalSteelTemp\n";
+    detailsOut << "slice,l/L,OriginalTPS,CarbonFiber_thickness,Glue_thickness,Steel_thickness,"
+                    "PreCarbonTemp,PreGlueTemp,PreSteelTemp,"
+                    "OptimizedTPS,PostCarbonTemp,PostGlueTemp,PostSteelTemp\n";
 
     // Simulation parameters from CLI
     int    nSlices       = cli.getNumSlices();
@@ -107,11 +110,32 @@ int main(int argc, char* argv[]) {
         double glueThick  = matProps.getGlueThickness(lL);
         double steelThick = matProps.getSteelThickness(lL);
 
+        // — sample original interface temperatures —
+        double posCarbonGlueOrig = tpsThick + cfThick;
+        double posGlueSteelOrig  = posCarbonGlueOrig + glueThick;
+        auto idxCarbonGlueOrig = std::lower_bound(s.xGrid.begin(), s.xGrid.end(), posCarbonGlueOrig)
+                              - s.xGrid.begin();
+        auto idxGlueSteelOrig  = std::lower_bound(s.xGrid.begin(), s.xGrid.end(), posGlueSteelOrig)
+                              - s.xGrid.begin();
+        double origTempCarbon = Tdist[idxCarbonGlueOrig];
+        double origTempGlue   = Tdist[idxGlueSteelOrig];
+        double origTempSteel  = steelT;
+
         // Suggest TPS thickness (optional optimization)
         TemperatureComparator comp;
         comp.setTimeStep(cli.getTimeStep(), cli.useAdaptiveTimeStep());
         comp.setGridResolution(cli.getPointsPerLayer());
-        double tpsOpt = comp.suggestTPSThickness(s, 800.0, tFinal, lL, matProps, theta);
+        // double tpsOpt = comp.suggestTPSThickness(s, 800.0, tFinal, lL, matProps, theta);
+        double tpsOpt = comp.suggestTPSThickness(
+                s,
+                800.0,   // max steel temp @ steel/glue
+                400.0,   // max glue  temp @ glue/carbon
+                350.0,   // max carbon temp @ carbon/external
+                tFinal,
+                lL,
+                matProps,
+                theta
+            );
 
         // --- NEW: re-run solver at optimized thickness ---
         s.layers[0].thickness = tpsOpt;
@@ -131,7 +155,17 @@ int main(int argc, char* argv[]) {
             solverOpt.step();
         }
         double steelOpt = solverOpt.getTemperatureDistribution().back();
-        // --- END NEW ---
+        // — sample optimized interface temperatures —
+        const auto& Topt = solverOpt.getTemperatureDistribution();
+        double posCarbonGlueOpt = tpsOpt + cfThick;
+        double posGlueSteelOpt  = posCarbonGlueOpt + glueThick;
+        auto idxCarbonGlueOpt = std::lower_bound(s.xGrid.begin(), s.xGrid.end(), posCarbonGlueOpt)
+                             - s.xGrid.begin();
+        auto idxGlueSteelOpt  = std::lower_bound(s.xGrid.begin(), s.xGrid.end(), posGlueSteelOpt)
+                             - s.xGrid.begin();
+        double postTempCarbon = Topt[idxCarbonGlueOpt];
+        double postTempGlue   = Topt[idxGlueSteelOpt];
+        double postTempSteel  = steelOpt;
 
         // Write summary CSV with the optimized‐thickness temperature
         summaryOut 
@@ -141,7 +175,24 @@ int main(int argc, char* argv[]) {
         << steelOpt   << ","   // now from optimized thickness
         << tpsOpt     << ","
         << steelT     << "\n"; // add original steel temperature
-    }
+
+
+        // write the detailed interface temps
+        detailsOut
+          << (slice+1) << ","
+          << lL         << ","
+          << tpsThick   << ","  // original TPS
+          << cfThick    << ","
+          << glueThick  << ","
+          << steelThick << ","
+          << origTempCarbon << ","
+          << origTempGlue   << ","
+          << origTempSteel  << ","
+          << tpsOpt         << ","
+          << postTempCarbon << ","
+          << postTempGlue   << ","
+          << postTempSteel  << "\n";
+    } // end for slices
 
     summaryOut.close();
     detailsOut.close();

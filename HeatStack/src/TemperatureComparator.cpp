@@ -4,12 +4,23 @@
 #include "BoundaryConditions.h"
 #include <iostream>
 #include <cmath>
+#include <algorithm>
 
 TemperatureComparator::TemperatureComparator() {}
 
 TemperatureComparator::~TemperatureComparator() {}
 
-double TemperatureComparator::suggestTPSThickness(const Stack& stack, double maxTemp, double duration, double l_over_L, const MaterialProperties& props, double theta) {
+// double TemperatureComparator::suggestTPSThickness(const Stack& stack, double maxTemp, double duration, double l_over_L, const MaterialProperties& props, double theta) {
+double TemperatureComparator::suggestTPSThickness(
+        const Stack& stack,
+        double maxSteelTemp,
+        double maxGlueTemp,
+        double maxCarbonTemp,
+        double duration,
+        double l_over_L,
+        const MaterialProperties& props,
+        double theta) 
+    {
     double minThickness = props.getMinTPSThickness();
     double maxThickness = props.getMaxTPSThickness();
     double tolerance = 0.00001; // 0.001 cm
@@ -22,20 +33,36 @@ double TemperatureComparator::suggestTPSThickness(const Stack& stack, double max
         MaterialProperties tempProps;
         tempProps.generateGrid(testStack, compPoints);
 
-        std::vector<double> temperatures = runSimulation(testStack, duration, theta, l_over_L);
-        double steelTemp = temperatures.back();
+        // std::vector<double> temperatures = runSimulation(testStack, duration, theta, l_over_L);
+        // double steelTemp = temperatures.back();
         // std::cerr << "[cmp] steelTemp=" << steelTemp << "\n";
-        if (steelTemp < maxTemp) {
-            maxThickness = thickness;
+
+        std::vector<double> temperatures =
+            runSimulation(testStack, duration, theta, l_over_L);
+        // compute each interface temperature
+        const auto& xGrid = testStack.xGrid;
+        double tpsThick    = testStack.layers[0].thickness;
+        double carbonThick = testStack.layers[1].thickness;
+        double glueThick   = testStack.layers[2].thickness;
+        double posCarbonGlue = tpsThick + carbonThick;
+        double posGlueSteel  = posCarbonGlue + glueThick;
+        int idxCarbonGlue = std::lower_bound(xGrid.begin(), xGrid.end(), posCarbonGlue)
+                          - xGrid.begin();
+        int idxGlueSteel  = std::lower_bound(xGrid.begin(), xGrid.end(), posGlueSteel)
+                          - xGrid.begin();
+        double carbonTemp = temperatures[idxCarbonGlue];
+        double glueTemp   = temperatures[idxGlueSteel];
+        double steelTemp  = temperatures.back();
+
+       bool allUnder = (steelTemp < maxSteelTemp)
+                     && (glueTemp  < maxGlueTemp)
+                     && (carbonTemp< maxCarbonTemp);
+
+        if (allUnder) {
+        maxThickness = thickness;
         } else {
             minThickness = thickness;
         }
-        
-        // std::cerr << "[cmp] thickness=" << thickness
-        // << "  dt=" << compDt
-        // << "  pts/layer=" << compPoints
-        // << "  run duration=" << duration << "\n";
-
     }
     return thickness;
 }
