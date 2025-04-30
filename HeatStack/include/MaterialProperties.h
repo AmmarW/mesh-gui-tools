@@ -53,7 +53,7 @@ public:
 
     // Get TPS thickness bounds
     double getMinTPSThickness() const { return 0.0001; } // 0.01 cm
-    double getMaxTPSThickness() const { return 0.01; }   // 1 cm
+    double getMaxTPSThickness() const { return 0.5; }   // 50 cm
 
     // External surface temperature profile (Dirichlet BC)
     double getExhaustTemp(double l_over_L) const;

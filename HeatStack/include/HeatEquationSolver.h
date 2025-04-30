@@ -31,6 +31,12 @@ public:
     // Adjust time step based on CFL or error criteria
     void adjustTimeStep(double errorThreshold = 1e-3);
 
+    // Return whether the solver’s own timeHandler_ has reached totalTime
+    bool isFinished() const;
+
+    // Get the current time from the time handler
+    double getCurrentTime() const;
+
 private:
     double theta_;                      // θ parameter (1 for BTCS, 0.5 for Crank-Nicolson)
     int problemSize_;                   // Number of grid points
