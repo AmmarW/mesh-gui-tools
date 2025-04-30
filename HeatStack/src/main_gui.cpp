@@ -153,7 +153,7 @@ void lookAtGL(GLdouble eyeX, GLdouble eyeY, GLdouble eyeZ,
     glTranslated(-eyeX, -eyeY, -eyeZ);
 }
 
-// ---- Simulation Logic (Unchanged as requested) ----
+// ---- Simulation Logic ----
 void runSimulationLogic() {
     try {
         if (strlen(meshPath) == 0) {
@@ -162,18 +162,20 @@ void runSimulationLogic() {
             return;
         }
 
-        // Ensure mesh handler is fresh or reload
-        meshHandler = MeshHandler(); // Recreate to be safe
-        if (!meshHandler.loadMesh(meshPath)) {
-            appLog += "❌ Error: Failed to load mesh file: " + std::string(meshPath) + "\n";
-             triggerSimulation = false; // Stop trigger if error
-             meshLoadedForVis = false;
+        // Use the MeshHandler constructor with filename parameter
+        meshHandler = MeshHandler(meshPath); // Use the constructor that takes a filename
+        
+        // Check if mesh is properly loaded
+        if (meshHandler.getVertices().empty() || meshHandler.getFaces().empty()) {
+            appLog += "❌ Error: Failed to load mesh file or mesh is empty: " + std::string(meshPath) + "\n";
+            triggerSimulation = false; // Stop trigger if error
+            meshLoadedForVis = false;
             return;
         }
         meshLoadedForVis = true; // Mark mesh as loaded for visualization
         appLog += "✅ Mesh loaded successfully for simulation.\n";
 
-        // Get mesh bounds
+        // Get mesh bounds - use safe accessors with error checking
         double zmin = meshHandler.getMinZ();
         double zmax = meshHandler.getMaxZ();
         double height = zmax - zmin;
@@ -182,12 +184,11 @@ void runSimulationLogic() {
         // Material properties
         MaterialProperties matProps;
 
-        // Open output files
+        // Open output files with better error handling
         std::ofstream summaryOut(outputFile);
          if (!summaryOut) {
-            // appLogoff_t* summaryOut = nullptr;
             appLog += "❌ Error: Could not open summary output file: " + std::string(outputFile) + "\n";
-             triggerSimulation = false; return;
+            triggerSimulation = false; return;
         }
         std::ofstream detailsOut("stack_details.csv");
         if (!detailsOut) {
@@ -250,7 +251,7 @@ void runSimulationLogic() {
             }
 
             if (!initialTemps.empty()) {
-                 // Optional: Check if size matches grid size
+                 // Check if size matches grid size
                 if (initialTemps.size() != stack.xGrid.size()) {
                      appLog += "⚠️ Warning: Initial temperature data size mismatch (expected "
                               + std::to_string(stack.xGrid.size()) + ", got "
@@ -269,8 +270,8 @@ void runSimulationLogic() {
             // Set boundary conditions
              try {
                  currentSolver.setBoundaryConditions(
-                    new DirichletCondition(static_cast<float>(matProps.getExhaustTemp(lL))), // Example Boundary Condition
-                    new NeumannCondition(0.0f) // Example Boundary Condition
+                    new DirichletCondition(static_cast<float>(matProps.getExhaustTemp(lL))), 
+                    new NeumannCondition(0.0f)
                  );
              } catch (const std::exception& bc_err) {
                 appLog += "❌ Error setting boundary conditions: " + std::string(bc_err.what()) + "\n";
@@ -293,7 +294,7 @@ void runSimulationLogic() {
                 }
                 timer.advance();
                 // Update progress (divide by nSlices to show overall progress)
-                 progress = (slice + (static_cast<float>(timer.getStepCount()) / maxSteps)) / nSlices;
+                progress = (slice + (static_cast<float>(timer.getStepCount()) / maxSteps)) / nSlices;
             }
 
             next_slice:; // Label for jumping to next slice on error
@@ -321,7 +322,16 @@ void runSimulationLogic() {
                 TemperatureComparator comp;
                 // Ensure stack is valid before passing to comparator
                 if (!stack.layers.empty() && !stack.xGrid.empty()) {
-                     tpsOpt = comp.suggestTPSThickness(stack, 800.0, simDuration, lL, matProps);
+                     tpsOpt = comp.suggestTPSThickness(
+                         stack,
+                         800.0,   // max steel temp @ steel/glue
+                         400.0,   // max glue  temp @ glue/carbon
+                         350.0,   // max carbon temp @ carbon/external
+                         simDuration,
+                         lL,
+                         matProps,
+                         theta
+                     );
                  } else {
                      appLog += "⚠️ Warning: Cannot optimize TPS for slice " + std::to_string(slice + 1) + " due to invalid stack.\n";
                  }
@@ -341,7 +351,7 @@ void runSimulationLogic() {
 
             // Export final temperature distribution for last slice only
             if (slice == nSlices - 1) {
-                 solver = currentSolver; // Store the solver state of the *last* slice globally for potential visualization
+                 solver = currentSolver; // Store the solver state of the *last* slice globally for visualization
                 std::ofstream outFile("final_temperature.csv");
                  if (outFile) {
                      outFile << "x,Temperature\n"; // Add header
