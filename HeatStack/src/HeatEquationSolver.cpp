@@ -38,7 +38,7 @@ void HeatEquationSolver::step() {
     double dt = timeHandler_.getTimeStep();
     int n = problemSize_;
 
-    // // Debug: print dt and solver time before stepping
+    // Debug: print dt and solver time before stepping
     // std::cerr << "[debug] before step: currentTime=" 
     //           << timeHandler_.getCurrentTime() 
     //           << "  dt=" << dt << "\n";
@@ -56,7 +56,7 @@ void HeatEquationSolver::step() {
         double alpha = getThermalDiffusivity(i);
         double r     = alpha * dt / (dxm * dxm);
 
-        // // Debug first interior setup
+        // Debug first interior setup
         // if (i == 1) {
         //     std::cerr << "[debug] i=1  dxl=" << dxl
         //               << " dxr=" << dxr
@@ -72,35 +72,40 @@ void HeatEquationSolver::step() {
         rhs[i] = temperature_[i]
                + (1 - theta_) * r
                  * (temperature_[i-1] - 2*temperature_[i] + temperature_[i+1]);
-
-        // Inject Dirichlet boundary into first interior row
-        if (i == 1 && outerBC_->getType() == BoundaryType::Dirichlet) {
-            double T0 = dynamic_cast<DirichletCondition*>(outerBC_)->getValue({0,0,0});
-            rhs[i] += theta_ * r * T0;
-            // std::cerr << "[debug] rhs[1] after injection = " << rhs[i] << "\n";
-        }
     }
 
     // 3) Dirichlet outer BC
     if (outerBC_->getType() == BoundaryType::Dirichlet) {
-        double T0 = dynamic_cast<DirichletCondition*>(outerBC_)->getValue({0,0,0});
+        auto* dirichlet = dynamic_cast<DirichletCondition*>(outerBC_);
+        if (!dirichlet) throw std::runtime_error("Outer BC cast to Dirichlet failed.");
+        double T0 = dirichlet->getValue({0,0,0});
         b[0]   = 1.0;
         rhs[0] = T0;
         c[0]   = 0.0;
     }
 
-    // 4) Neumann inner BC
+    // Inner Dirichlet
+    if (innerBC_->getType() == BoundaryType::Dirichlet) {
+        auto* dirichlet = dynamic_cast<DirichletCondition*>(innerBC_);
+        if (!dirichlet) throw std::runtime_error("Inner BC cast to Dirichlet failed.");
+        double Tn = dirichlet->getValue({0, 0, 0});
+        b[n - 1] = 1.0;
+        rhs[n - 1] = Tn;
+        a[n - 2] = 0.0;
+    }
+
+    // Inner Neumann
     if (innerBC_->getType() == BoundaryType::Neumann) {
         int i = n - 1;
-        double dx = stack_.xGrid[i] - stack_.xGrid[i-1];
+        double dx = stack_.xGrid[i] - stack_.xGrid[i - 1];
         double alpha = getThermalDiffusivity(i);
-        double r     = alpha * dt / (dx * dx);
+        double r = alpha * dt / (dx * dx);
 
-        a[i-1] = -2 * theta_ * r;
-        b[i]   =  1 + 2 * theta_ * r;
-        rhs[i] = temperature_[i]
-               + (1 - theta_) * r
-                 * (temperature_[i-1] - 2 * temperature_[i] + temperature_[i-1]);
+        a[i - 1] = -2 * theta_ * r;
+        b[i] = 1 + 2 * theta_ * r;
+
+        // Mirror assumption: temperature_[i+1] ≈ temperature_[i-1] for Neumann (∂T/∂x = 0)
+        rhs[i] = temperature_[i] + (1 - theta_) * r * (temperature_[i - 1] - 2 * temperature_[i] + temperature_[i - 1]);
     }
 
     // // Debug main diagonal entries
@@ -115,7 +120,7 @@ void HeatEquationSolver::step() {
     // 6) Solve and update
     temperature_ = matrixSolver_.solve(rhs);
 
-    // // Debug first few temperatures after solve
+    // Debug first few temperatures after solve
     // std::cerr << "[debug] T^{n+1}[0..2] = "
     //           << temperature_[0] << ", "
     //           << temperature_[1] << ", "
@@ -159,16 +164,17 @@ void HeatEquationSolver::setupRHS(std::vector<double>& b, double dt) {
     }
 }
 
+
+
 void HeatEquationSolver::applyBoundaryConditions(std::vector<std::vector<double>>& A, std::vector<double>& b, double dt) {
-    // Outer boundary (Dirichlet: T = T_surface)
     if (outerBC_ && outerBC_->getType() == BoundaryType::Dirichlet) {
         auto* dirichlet = dynamic_cast<DirichletCondition*>(outerBC_);
+        if (!dirichlet) throw std::runtime_error("Outer BC cast to Dirichlet failed.");
         double T_surface = dirichlet->getValue({0, 0, 0});
         A[0][0] = 1.0;
         b[0] = T_surface;
     }
 
-    // Inner boundary (Neumann: dT/dx = 0)
     if (innerBC_ && innerBC_->getType() == BoundaryType::Neumann) {
         double dx = stack_.xGrid[problemSize_ - 1] - stack_.xGrid[problemSize_ - 2];
         double alpha = getThermalDiffusivity(problemSize_ - 1);
@@ -176,7 +182,8 @@ void HeatEquationSolver::applyBoundaryConditions(std::vector<std::vector<double>
 
         A[problemSize_ - 1][problemSize_ - 2] = -2 * theta_ * r;
         A[problemSize_ - 1][problemSize_ - 1] = 1 + 2 * theta_ * r;
-        b[problemSize_ - 1] = temperature_[problemSize_ - 1] + (1 - theta_) * r * (temperature_[problemSize_ - 2] - 2 * temperature_[problemSize_ - 1] + temperature_[problemSize_ - 2]);
+        b[problemSize_ - 1] = temperature_[problemSize_ - 1]
+            + (1 - theta_) * r * (temperature_[problemSize_ - 2] - 2 * temperature_[problemSize_ - 1] + temperature_[problemSize_ - 2]);
     }
 }
 
