@@ -1125,8 +1125,24 @@ void runSimulationLogic() {
             return;
         }
 
+        // === TIMERS ===
+        double tMeshLoad = 0.0;
+        double tInitTempLoad = 0.0;
+        double tStackSetup = 0.0;
+        double tOrigSolve = 0.0;
+        double tHistOrigSave = 0.0;
+        double tOptSolve = 0.0;
+        double tOptSuggestion = 0.0;
+        double tHistOptSave = 0.0;
+        double tSummaryDetailsWrite = 0.0;
+
+        // overall timer
+        auto overall_start = std::chrono::high_resolution_clock::now();
+
         // Use the MeshHandler constructor with filename parameter
+        auto start = std::chrono::high_resolution_clock::now();
         meshHandler = MeshHandler(meshPath); // Use the constructor that takes a filename
+        tMeshLoad = std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - start).count();
         
         // Check if mesh is properly loaded
         if (meshHandler.getVertices().empty() || meshHandler.getFaces().empty()) {
@@ -1144,12 +1160,28 @@ void runSimulationLogic() {
         double height = zmax - zmin;
         if (height <= 0) height = 1.0; // Avoid division by zero if mesh is flat
 
+        // ---- Initial temperature loading ----
+        auto init_start = std::chrono::high_resolution_clock::now();
+        std::vector<double> uniformInit;
+        if (strlen(initTempPath) > 0) {
+            InitialTemperature tempLoader;
+            if (!std::filesystem::exists(initTempPath)) {
+                appLog += "⚠️ Warning: Initial temperature file not found: " + std::string(initTempPath) + ". Using default 300K.\n";
+            } else {
+                uniformInit = tempLoader.loadInitialTemperature(initTempPath);
+                if (uniformInit.empty()) {
+                    appLog += "⚠️ Warning: Failed to load or empty initial temperature file. Using default 300K.\n";
+                }
+            }
+        }
+        tInitTempLoad = std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - init_start).count();
+
         // Material properties
         MaterialProperties matProps;
 
         // Open output files with better error handling
         std::ofstream summaryOut(outputFile);
-         if (!summaryOut) {
+        if (!summaryOut) {
             appLog += "❌ Error: Could not open summary output file: " + std::string(outputFile) + "\n";
             triggerSimulation = false; return;
         }
@@ -1159,8 +1191,11 @@ void runSimulationLogic() {
             triggerSimulation = false; return;
         }
 
-        summaryOut << "slice,l/L,method,finalSteelTemp,TPS_thickness\n";
-        detailsOut << "slice,l/L,TPS_thickness,CarbonFiber_thickness,Glue_thickness,Steel_thickness,finalSteelTemp\n";
+        summaryOut << "slice,l/L,method,finalSteelTemp,TPS_thickness,OriginalSteelTemp\n";
+        detailsOut << "slice,l/L,OriginalTPS,CarbonFiber_thickness,"
+                  << "Glue_thickness,Steel_thickness,"
+                  << "PreCarbonTemp,PreGlueTemp,PreSteelTemp,"
+                  << "OptimizedTPS,PostCarbonTemp,PostGlueTemp,PostSteelTemp\n";
 
         double totalSolveMs = 0.0;
         HeatEquationSolver currentSolver; // Local solver for the simulation run
@@ -1171,57 +1206,55 @@ void runSimulationLogic() {
 
             double z = zmin + (nSlices > 1 ? (double(slice)/(nSlices-1)) * height : height / 2.0); // Handle nSlices=1 case
             double lL = (nSlices > 1 ? (z - zmin) / height : 0.5);
-             if (height <= 0) lL = 0.0; // Handle flat mesh case
+            if (height <= 0) lL = 0.0; // Handle flat mesh case
 
-            // Initialize timer
-            TimeHandler timer(simDuration, timeStep, useAdaptiveTimeStep);
-
-            // Create stack with proper initialization
+            // ---- Stack setup (incl. grid gen) ----
+            auto stack_start = std::chrono::high_resolution_clock::now();
             Stack stack;
             stack.id = slice + 1;
 
-             // Define layers within the loop for clarity
-            Layer tpsLayer       = {{"TPS",         0.2,  160.0, 1200.0,   0.0, 1200.0}, matProps.getTPSThickness(lL),          pointsPerLayer};
-            Layer carbonFiberLayer = {{"CarbonFiber", 500.0,1600.0, 700.0,   0.0,  350.0}, matProps.getCarbonFiberThickness(lL),     pointsPerLayer};
-            Layer glueLayer      = {{"Glue",        200.0,1300.0, 900.0,   0.0,  400.0}, matProps.getGlueThickness(lL),            pointsPerLayer};
-            Layer steelLayer     = {{"Steel",       100.0,7850.0, 500.0, 800.0,    0.0}, matProps.getSteelThickness(lL),           pointsPerLayer};
+            // Define layers within the loop for clarity
+            Layer tpsLayer = {{"TPS", 0.2, 160.0, 1200.0, 0.0, 1200.0}, matProps.getTPSThickness(lL), pointsPerLayer};
+            Layer carbonFiberLayer = {{"CarbonFiber", 500.0, 1600.0, 700.0, 0.0, 350.0}, matProps.getCarbonFiberThickness(lL), pointsPerLayer};
+            Layer glueLayer = {{"Glue", 200.0, 1300.0, 900.0, 0.0, 400.0}, matProps.getGlueThickness(lL), pointsPerLayer};
+            Layer steelLayer = {{"Steel", 100.0, 7850.0, 500.0, 800.0, 0.0}, matProps.getSteelThickness(lL), pointsPerLayer};
 
             stack.layers = { tpsLayer, carbonFiberLayer, glueLayer, steelLayer };
+            
+            double tpsThick = matProps.getTPSThickness(lL);
+            double cfThick = matProps.getCarbonFiberThickness(lL);
+            double glueThick = matProps.getGlueThickness(lL);
+            double steelThick = matProps.getSteelThickness(lL);
 
             matProps.generateGrid(stack, pointsPerLayer);
+            tStackSetup = std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - stack_start).count();
 
-             if (stack.xGrid.empty()) {
+            if (stack.xGrid.empty()) {
                 appLog += "❌ Error: Grid generation failed for slice " + std::to_string(slice + 1) + "\n";
                 continue; // Skip this slice
             }
 
+            // Compute interface indices
+            double posCG = tpsThick + cfThick;
+            double posGS = posCG + glueThick;
+            auto idxCarbonGlue = std::lower_bound(stack.xGrid.begin(), stack.xGrid.end(), posCG) - stack.xGrid.begin();
+            auto idxGlueSteel = std::lower_bound(stack.xGrid.begin(), stack.xGrid.end(), posGS) - stack.xGrid.begin();
+
             // Initialize solver for this slice
+            TimeHandler timer(simDuration, timeStep, useAdaptiveTimeStep);
             currentSolver = HeatEquationSolver(theta); // Use the local solver
             currentSolver.initialize(stack, timer);
 
             // Set initial temperature
-            std::vector<double> initialTemps;
-            if (strlen(initTempPath) > 0) {
-                InitialTemperature tempLoader;
-                if (!std::filesystem::exists(initTempPath)) {
-                     appLog += "⚠️ Warning: Initial temperature file not found: " + std::string(initTempPath) + ". Using default 300K.\n";
+            if (!uniformInit.empty()) {
+                // Check if size matches grid size
+                if (uniformInit.size() != stack.xGrid.size()) {
+                    appLog += "⚠️ Warning: Initial temperature data size mismatch (expected "
+                            + std::to_string(stack.xGrid.size()) + ", got "
+                            + std::to_string(uniformInit.size()) + "). Using default 300K.\n";
+                    currentSolver.setInitialTemperature(std::vector<double>(stack.xGrid.size(), 300.0));
                 } else {
-                    initialTemps = tempLoader.loadInitialTemperature(initTempPath);
-                     if (initialTemps.empty()) {
-                         appLog += "⚠️ Warning: Failed to load or empty initial temperature file. Using default 300K.\n";
-                    }
-                }
-            }
-
-            if (!initialTemps.empty()) {
-                 // Check if size matches grid size
-                if (initialTemps.size() != stack.xGrid.size()) {
-                     appLog += "⚠️ Warning: Initial temperature data size mismatch (expected "
-                              + std::to_string(stack.xGrid.size()) + ", got "
-                              + std::to_string(initialTemps.size()) + "). Using default 300K.\n";
-                     currentSolver.setInitialTemperature(std::vector<double>(stack.xGrid.size(), 300.0));
-                } else {
-                    currentSolver.setInitialTemperature(initialTemps);
+                    currentSolver.setInitialTemperature(uniformInit);
                 }
             } else {
                 currentSolver.setInitialTemperature(std::vector<double>(stack.xGrid.size(), 300.0));
@@ -1231,101 +1264,248 @@ void runSimulationLogic() {
             }
 
             // Set boundary conditions
-             try {
-                 currentSolver.setBoundaryConditions(
+            try {
+                currentSolver.setBoundaryConditions(
                     new DirichletCondition(static_cast<float>(matProps.getExhaustTemp(lL))), 
                     new NeumannCondition(0.0f)
-                 );
-             } catch (const std::exception& bc_err) {
+                );
+            } catch (const std::exception& bc_err) {
                 appLog += "❌ Error setting boundary conditions: " + std::string(bc_err.what()) + "\n";
                 continue; // Skip slice if BCs fail
             }
 
+            // Prepare time history buffer for original thickness
+            std::ostringstream histOrigBuffer;
+            histOrigBuffer << "time[s],T_carbon_glue[K],T_glue_steel[K],T_steel[K]\n";
+
             // Timer for solver per slice
             auto solve_start = std::chrono::high_resolution_clock::now();
+            double maxSteps = (timeStep > 0) ? (simDuration / timeStep) : 1.0; // Avoid division by zero
+            if (maxSteps <= 0) maxSteps = 1.0;
 
-            // Run simulation for this slice
-             double maxSteps = (timeStep > 0) ? (simDuration / timeStep) : 1.0; // Avoid division by zero
-             if (maxSteps <= 0) maxSteps = 1.0;
-
+            // ---- Original solver run ----
             while (!timer.isFinished()) {
-                 try {
-                     currentSolver.step();
-                 } catch (const std::exception& step_err) {
+                try {
+                    currentSolver.step();
+                } catch (const std::exception& step_err) {
                     appLog += "❌ Error during solver step for slice " + std::to_string(slice+1) + ": " + std::string(step_err.what()) + "\n";
                     goto next_slice; // Break inner loop, go to next slice
                 }
+                
+                double t = timer.getCurrentTime();
+                const auto& Tdist = currentSolver.getTemperatureDistribution();
+                
+                // Record interface temperatures for history
+                if (idxCarbonGlue < Tdist.size() && idxGlueSteel < Tdist.size()) {
+                    histOrigBuffer 
+                        << t << ","
+                        << Tdist[idxCarbonGlue] << ","
+                        << Tdist[idxGlueSteel] << ","
+                        << Tdist.back() << "\n";
+                }
+                
                 timer.advance();
                 // Update progress (divide by nSlices to show overall progress)
-                progress = (slice + (static_cast<float>(timer.getStepCount()) / maxSteps)) / nSlices;
+                progress = (slice + (static_cast<float>(timer.getStepCount()) / maxSteps)) / (nSlices * 2); // First half of progress
             }
 
-            next_slice:; // Label for jumping to next slice on error
-
             auto solve_end = std::chrono::high_resolution_clock::now();
-            double solveMs = std::chrono::duration<double, std::milli>(solve_end - solve_start).count();
-            totalSolveMs += solveMs;
+            tOrigSolve = std::chrono::duration<double, std::milli>(solve_end - solve_start).count();
+            totalSolveMs += tOrigSolve;
 
-            // Get results for this slice
+            // ---- Original history CSV save ----
+            auto saveOrig_start = std::chrono::high_resolution_clock::now();
+            {
+                std::ofstream histOrig(
+                    "time_history_orig_slice_" + std::to_string(slice+1) + ".csv"
+                );
+                if (histOrig) {
+                    histOrig << histOrigBuffer.str();
+                    histOrig.close();
+                } else {
+                    appLog += "⚠️ Warning: Could not save original time history for slice " + std::to_string(slice+1) + "\n";
+                }
+            }
+            tHistOrigSave = std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - saveOrig_start).count();
+
+            // Get results for original thickness
             const auto& Tdist = currentSolver.getTemperatureDistribution();
             if (Tdist.empty()) {
                 appLog += "⚠️ Warning: No temperature distribution result for slice " + std::to_string(slice + 1) + "\n";
                 continue; // Skip results processing for this slice
             }
-             double steelT = Tdist.back(); // Assume last point is steel surface
-            double tpsThick = matProps.getTPSThickness(lL);
-            double cfThick = matProps.getCarbonFiberThickness(lL);
-            double glueThick = matProps.getGlueThickness(lL);
-            double steelThick = matProps.getSteelThickness(lL);
+            
+            double origTempCarbon = (idxCarbonGlue < Tdist.size()) ? Tdist[idxCarbonGlue] : 0.0;
+            double origTempGlue = (idxGlueSteel < Tdist.size()) ? Tdist[idxGlueSteel] : 0.0;
+            double origTempSteel = Tdist.back(); // Assume last point is steel surface
 
-            // Suggest TPS thickness
-             double tpsOpt = -1.0; // Default invalid value
-             try {
-                currentProcessingStatus = "Optimizing TPS thickness for stack " + std::to_string(slice + 1);
+            // Suggest optimal TPS thickness
+            currentProcessingStatus = "Optimizing TPS thickness for stack " + std::to_string(slice + 1);
+            double tpsOpt = -1.0; // Default invalid value
+            
+            auto optSuggest_start = std::chrono::high_resolution_clock::now();
+            try {
                 TemperatureComparator comp;
+                comp.setTimeStep(timeStep, useAdaptiveTimeStep);
+                comp.setGridResolution(pointsPerLayer);
+                
                 // Ensure stack is valid before passing to comparator
                 if (!stack.layers.empty() && !stack.xGrid.empty()) {
-                     tpsOpt = comp.suggestTPSThickness(
-                         stack,
-                         800.0,   // max steel temp @ steel/glue
-                         400.0,   // max glue  temp @ glue/carbon
-                         350.0,   // max carbon temp @ carbon/external
-                         simDuration,
-                         lL,
-                         matProps,
-                         theta
-                     );
-                 } else {
-                     appLog += "⚠️ Warning: Cannot optimize TPS for slice " + std::to_string(slice + 1) + " due to invalid stack.\n";
-                 }
-             } catch (const std::exception& opt_err) {
-                 appLog += "❌ Error during TPS optimization for slice " + std::to_string(slice+1) + ": " + std::string(opt_err.what()) + "\n";
-             }
+                    tpsOpt = comp.suggestTPSThickness(
+                        stack,
+                        800.0,   // max steel temp @ steel/glue
+                        400.0,   // max glue  temp @ glue/carbon
+                        350.0,   // max carbon temp @ carbon/external
+                        simDuration,
+                        lL,
+                        matProps,
+                        theta
+                    );
+                } else {
+                    appLog += "⚠️ Warning: Cannot optimize TPS for slice " + std::to_string(slice + 1) + " due to invalid stack.\n";
+                }
+            } catch (const std::exception& opt_err) {
+                appLog += "❌ Error during TPS optimization for slice " + std::to_string(slice+1) + ": " + std::string(opt_err.what()) + "\n";
+            }
+            tOptSuggestion = std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - optSuggest_start).count();
 
-            // Write results for this slice
-            summaryOut << (slice + 1) << "," << lL << ",BTCS," << steelT << "," << tpsOpt << "\n";
-            detailsOut << (slice + 1) << ","
-                      << lL << ","
-                      << tpsThick << ","
-                      << cfThick << ","
-                      << glueThick << ","
-                      << steelThick << ","
-                      << steelT << "\n";
+            // --- Re-run solver with optimized thickness ---
+            currentProcessingStatus = "Running with optimized thickness for stack " + std::to_string(slice + 1);
+            
+            // Only run optimized simulation if we got a valid thickness
+            double postTempCarbon = 0.0;
+            double postTempGlue = 0.0;
+            double postTempSteel = 0.0;
+            
+            if (tpsOpt > 0) {
+                stack.layers[0].thickness = tpsOpt;
+                matProps.generateGrid(stack, pointsPerLayer);
+
+                TimeHandler timerOpt(simDuration, timeStep, useAdaptiveTimeStep);
+                HeatEquationSolver solverOpt(theta);
+                solverOpt.initialize(stack, timerOpt);
+                
+                if (uniformInit.empty() || uniformInit.size() != stack.xGrid.size()) {
+                    solverOpt.setInitialTemperature(std::vector<double>(stack.xGrid.size(), 300.0));
+                } else {
+                    solverOpt.setInitialTemperature(uniformInit);
+                }
+                
+                try {
+                    solverOpt.setBoundaryConditions(
+                        new DirichletCondition(static_cast<float>(matProps.getExhaustTemp(lL))),
+                        new NeumannCondition(0.0f)
+                    );
+                } catch (const std::exception& bc_err) {
+                    appLog += "❌ Error setting boundary conditions for optimized run: " + std::string(bc_err.what()) + "\n";
+                    goto skip_opt_run; // Skip optimized simulation if BCs fail
+                }
+
+                auto solveOpt_start = std::chrono::high_resolution_clock::now();
+                std::ostringstream histOptBuffer;
+                histOptBuffer << "time[s],T_carbon_glue[K],T_glue_steel[K],T_steel[K]\n";
+                
+                while (!timerOpt.isFinished()) {
+                    try {
+                        solverOpt.step();
+                    } catch (const std::exception& step_err) {
+                        appLog += "❌ Error during optimized solver step: " + std::string(step_err.what()) + "\n";
+                        break;
+                    }
+                    
+                    double t2 = timerOpt.getCurrentTime();
+                    const auto& T2 = solverOpt.getTemperatureDistribution();
+                    
+                    if (idxCarbonGlue < T2.size() && idxGlueSteel < T2.size()) {
+                        histOptBuffer
+                            << t2 << ","
+                            << T2[idxCarbonGlue] << ","
+                            << T2[idxGlueSteel] << ","
+                            << T2.back() << "\n";
+                    }
+                    
+                    timerOpt.advance();
+                    // Update progress for second half (optimized run)
+                    progress = 0.5 + (slice + (static_cast<float>(timerOpt.getStepCount()) / maxSteps)) / (nSlices * 2);
+                }
+                
+                tOptSolve = std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - solveOpt_start).count();
+                totalSolveMs += tOptSolve;
+                
+                // ---- Optimized history CSV save ----
+                auto saveOpt_start = std::chrono::high_resolution_clock::now();
+                {
+                    std::ofstream histOpt(
+                        "time_history_opt_slice_" + std::to_string(slice+1) + ".csv"
+                    );
+                    if (histOpt) {
+                        histOpt << histOptBuffer.str();
+                        histOpt.close();
+                    } else {
+                        appLog += "⚠️ Warning: Could not save optimized time history for slice " + std::to_string(slice+1) + "\n";
+                    }
+                }
+                tHistOptSave = std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - saveOpt_start).count();
+
+                // Sample optimized steel temp
+                const auto& Topt = solverOpt.getTemperatureDistribution();
+                postTempCarbon = (idxCarbonGlue < Topt.size()) ? Topt[idxCarbonGlue] : 0.0;
+                postTempGlue = (idxGlueSteel < Topt.size()) ? Topt[idxGlueSteel] : 0.0;
+                postTempSteel = Topt.back();
+                
+                // Store the optimized solver result if it's the last slice
+                if (slice == nSlices - 1) {
+                    solver = solverOpt; // Store the solver state globally for visualization
+                }
+            }
+            
+skip_opt_run:
+            // ---- Summary & details CSV writes ----
+            auto out_start = std::chrono::high_resolution_clock::now();
+
+            // Write summary CSV with the optimized‐thickness temperature
+            summaryOut 
+                << (slice + 1) << ","
+                << lL << ","
+                << "BTCS" << ","
+                << (postTempSteel > 0 ? postTempSteel : origTempSteel) << ","
+                << (tpsOpt > 0 ? tpsOpt : tpsThick) << ","
+                << origTempSteel << "\n";
+
+            // write the detailed interface temps
+            detailsOut
+                << (slice+1) << ","
+                << lL << ","
+                << tpsThick << ","  // original TPS
+                << cfThick << ","
+                << glueThick << ","
+                << steelThick << ","
+                << origTempCarbon << ","
+                << origTempGlue << ","
+                << origTempSteel << ","
+                << (tpsOpt > 0 ? tpsOpt : tpsThick) << ","
+                << (postTempCarbon > 0 ? postTempCarbon : origTempCarbon) << ","
+                << (postTempGlue > 0 ? postTempGlue : origTempGlue) << ","
+                << (postTempSteel > 0 ? postTempSteel : origTempSteel) << "\n";
+                
+            tSummaryDetailsWrite = std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - out_start).count();
 
             // Export final temperature distribution for last slice only
             if (slice == nSlices - 1) {
-                 solver = currentSolver; // Store the solver state of the *last* slice globally for visualization
                 std::ofstream outFile("final_temperature.csv");
-                 if (outFile) {
-                     outFile << "x,Temperature\n"; // Add header
-                     for (size_t i = 0; i < Tdist.size(); ++i) {
-                         outFile << stack.xGrid[i] << "," << Tdist[i] << "\n";
-                     }
-                     outFile.close();
-                 } else {
-                     appLog += "❌ Error: Could not open final_temperature.csv for writing.\n";
-                 }
+                if (outFile) {
+                    outFile << "x,Temperature\n"; // Add header
+                    const auto& finalTdist = (postTempSteel > 0) ? solver.getTemperatureDistribution() : Tdist;
+                    for (size_t i = 0; i < finalTdist.size(); ++i) {
+                        outFile << stack.xGrid[i] << "," << finalTdist[i] << "\n";
+                    }
+                    outFile.close();
+                } else {
+                    appLog += "❌ Error: Could not open final_temperature.csv for writing.\n";
+                }
             }
+            
+next_slice:; // Label for jumping to next slice on error
         } // End slice loop
 
         // Clear processing status when done
@@ -1335,13 +1515,25 @@ void runSimulationLogic() {
         summaryOut.close();
         detailsOut.close();
 
+        // overall end
+        double overallMs = std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - overall_start).count();
+
         appLog += "✅ Simulation completed!\n";
         appLog += "Processed " + std::to_string(nSlices) + " slices.\n";
-        appLog += "Total solver time: " + std::to_string(totalSolveMs) + " ms\n";
-        appLog += "Output Files:\n";
+        appLog += "\n=== Performance ===\n";
+        appLog += "Mesh load time:             " + std::to_string(tMeshLoad) + " ms\n";
+        appLog += "Init temp load time:        " + std::to_string(tInitTempLoad) + " ms\n";
+        appLog += "Original solver time:       " + std::to_string(tOrigSolve) + " ms\n";
+        appLog += "TPS optimization time:      " + std::to_string(tOptSuggestion) + " ms\n";
+        appLog += "Optimized solver time:      " + std::to_string(tOptSolve) + " ms\n";
+        appLog += "Total computation time:     " + std::to_string(overallMs) + " ms\n";
+        appLog += "\n=== Output Files ===\n";
         appLog += "- final_temperature.csv: Temperature distribution (last slice)\n";
         appLog += "- " + std::string(outputFile) + ": Summary results\n";
         appLog += "- stack_details.csv: Detailed layer information\n";
+        appLog += "- time_history_orig_slice_*.csv: Original time histories\n";
+        appLog += "- time_history_opt_slice_*.csv: Optimized time histories\n";
+        
         simulationCompleted = true; // Mark as completed
         triggerSimulation = false;  // Reset trigger
 
@@ -1353,10 +1545,10 @@ void runSimulationLogic() {
         triggerSimulation = false; // Ensure trigger is reset on exception
         simulationCompleted = false;
     } catch (...) {
-         appLog += "❌ Unknown exception occurred in runSimulationLogic.\n";
-         currentProcessingStatus.clear();
-         triggerSimulation = false;
-         simulationCompleted = false;
+        appLog += "❌ Unknown exception occurred in runSimulationLogic.\n";
+        currentProcessingStatus.clear();
+        triggerSimulation = false;
+        simulationCompleted = false;
     }
 }
 
