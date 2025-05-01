@@ -40,6 +40,19 @@
 #include "imgui_impl_opengl3.h"
 #include "tinyfiledialogs.h"
 
+// Forward declarations to fix reference errors
+void drawCoordinateAxes();
+void runSimulationLogic();
+void renderSimulationControls();
+void renderVisualizationControls();
+void renderVisualization(int vx, int vy, int vw, int vh, bool isHovered);
+void drawMeshWithTemperatures(const MeshHandler& mesh, const HeatEquationSolver& completedSolver);
+void drawMeshWithThickness(const MeshHandler& mesh, const HeatEquationSolver& solver);
+void drawMeshDefault(const MeshHandler& mesh);
+void drawSliceLines(const MeshHandler& mesh);
+void drawTemperaturePlot(int x, int y, int width, int height); // Added forward declaration
+void updateMeshVisualization(); // Added forward declaration
+
 // 🌟 Global GUI Variables 🌟
 char meshPath[512] = "";
 char initTempPath[512] = "";
@@ -70,13 +83,15 @@ float camAzimuth = 45.0f;       // Rotation around Y axis (degrees)
 float camElevation = 30.0f;     // Rotation around X axis (degrees)
 float camTargetX = 0.0f, camTargetY = 0.0f, camTargetZ = 0.0f; // Look-at point (for panning)
 bool renderWireframe = false;
+bool showMesh = true;           // NEW: Toggle for mesh visibility
 const float mouseSensitivity = 0.4f;
 const float zoomSensitivity = 0.5f;
 const float panSensitivity = 0.01f; // Sensitivity for panning
-enum VisualizationMode { TEMPERATURE_VIS, THICKNESS_VIS };
+enum VisualizationMode { TEMPERATURE_VIS, THICKNESS_VIS, LINE_PLOT_VIS };  // Added LINE_PLOT_VIS mode
 VisualizationMode currentVisMode = THICKNESS_VIS; // Default to thickness visualization
 bool showColorScale = true; // Whether to show the color scale
 bool showSliceLines = true; // Add toggle for slice lines
+bool autoAdjustCameraOnLoad = true; // Automatically center camera on mesh load
 
 // Reset function to clear all inputs
 void resetSimulation() {
@@ -151,6 +166,954 @@ void lookAtGL(GLdouble eyeX, GLdouble eyeY, GLdouble eyeZ,
 
     glMultMatrixd(m);
     glTranslated(-eyeX, -eyeY, -eyeZ);
+}
+
+// Helper function to swap Y and Z axes when drawing vertices
+void drawVertexWithYZSwap(const std::array<float, 3>& vertex) {
+    // Swap Y and Z coordinates to make Z the vertical axis
+    double x = static_cast<double>(vertex[0]);
+    double y = static_cast<double>(vertex[2]); // Use Z as Y (vertical)
+    double z = static_cast<double>(vertex[1]); // Use Y as Z (depth)
+    glVertex3d(x, y, z);
+}
+
+// Helper function to calculate normal with Y-Z swap
+std::array<double, 3> calculateNormalWithYZSwap(const std::array<float, 3>& v1, 
+                                               const std::array<float, 3>& v2, 
+                                               const std::array<float, 3>& v3) {
+    // Convert coordinates with Y-Z swap for normal calculation
+    double v1x = v1[0], v1y = v1[2], v1z = v1[1]; // Swap Y and Z
+    double v2x = v2[0], v2y = v2[2], v2z = v2[1]; // Swap Y and Z
+    double v3x = v3[0], v3y = v3[2], v3z = v3[1]; // Swap Y and Z
+    
+    // Calculate normal for the swapped coordinates
+    double nx = (v2y - v1y) * (v3z - v1z) - (v2z - v1z) * (v3y - v1y);
+    double ny = (v2z - v1z) * (v3x - v1x) - (v2x - v1x) * (v3z - v1z);
+    double nz = (v2x - v1x) * (v3y - v1y) - (v2y - v1y) * (v3x - v1x);
+    
+    // Normalize
+    double len = sqrt(nx*nx + ny*ny + nz*nz);
+    if (len > 0) {
+        nx /= len;
+        ny /= len;
+        nz /= len;
+    }
+    
+    return {nx, ny, nz};
+}
+
+// Helper function to draw coordinate axes
+void drawCoordinateAxes() {
+    // Make axes smaller and relative to mesh size? For now, fixed size.
+    float axisLength = 0.5f; // Adjust as needed
+    glLineWidth(2.0f);
+    glBegin(GL_LINES);
+        // X axis (red) - horizontal
+        glColor3f(1.0f, 0.0f, 0.0f);
+        glVertex3f(0.0f, 0.0f, 0.0f);
+        glVertex3f(axisLength, 0.0f, 0.0f);
+        
+        // Y axis (green) - horizontal (changed from blue to green)
+        glColor3f(0.0f, 1.0f, 0.0f);
+        glVertex3f(0.0f, 0.0f, 0.0f);
+        glVertex3f(0.0f, axisLength, 0.0f);
+        
+        // Z axis (blue) - vertical (changed from green to blue)
+        glColor3f(0.0f, 0.0f, 1.0f);
+        glVertex3f(0.0f, 0.0f, 0.0f);
+        glVertex3f(0.0f, 0.0f, axisLength);
+    glEnd();
+    glLineWidth(1.0f);
+}
+
+// Helper function to update visualization based on the currently loaded mesh
+void updateMeshVisualization() {
+    if (meshLoadedForVis && autoAdjustCameraOnLoad) {
+        // Calculate mesh bounds
+        float minX = meshHandler.getMinX();
+        float maxX = meshHandler.getMaxX();
+        float minY = meshHandler.getMinY();
+        float maxY = meshHandler.getMaxY();
+        float minZ = meshHandler.getMinZ();
+        float maxZ = meshHandler.getMaxZ();
+        
+        // Calculate center of the mesh
+        float centerX = (minX + maxX) / 2.0f;
+        float centerY = (minY + maxY) / 2.0f;
+        float centerZ = (minZ + maxZ) / 2.0f;
+        
+        // Set camera target to the mesh center
+        camTargetX = centerX;
+        camTargetY = centerY;
+        camTargetZ = centerZ;
+        
+        // Calculate appropriate distance based on mesh size
+        float sizeX = maxX - minX;
+        float sizeY = maxY - minY;
+        float sizeZ = maxZ - minZ;
+        float size = std::max(sizeX, std::max(sizeY, sizeZ));
+        
+        // Set camera distance based on mesh size
+        camDistance = size * 1.5f;
+        if (camDistance < 1.0f) camDistance = 1.0f;
+        if (camDistance > 20.0f) camDistance = 20.0f;
+        
+        // Reset auto-adjust flag so it only happens once per load
+        autoAdjustCameraOnLoad = false;
+    }
+}
+
+// ---- GUI Simulation Controls ----
+void renderSimulationControls() {
+    // This window will be explicitly sized and positioned in the main loop
+    ImGui::Begin("HeatStack Simulation");
+
+    if (ImGui::InputText("Mesh Path", meshPath, sizeof(meshPath))) {
+        meshLoadedForVis = false; // Reset vis flag if path changes
+        simulationCompleted = false; // Results are invalid if mesh changes
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Browse Mesh")) {
+        const char* filter[] = { "*.obj", "*.csv" };
+        const char* file = tinyfd_openFileDialog("Select Mesh", "", 2, filter, "OBJ or CSV files", 0);
+        if (file) {
+            strncpy_s(meshPath, sizeof(meshPath), file, _TRUNCATE);
+            meshLoadedForVis = false; // Reset vis flag
+            simulationCompleted = false; // Results are invalid
+        }
+    }
+
+    ImGui::InputText("Initial Temp (.csv)", initTempPath, sizeof(initTempPath));
+    ImGui::SameLine();
+    if (ImGui::Button("Browse Temp")) {
+        const char* filter[] = { "*.csv" };
+        const char* file = tinyfd_openFileDialog("Select Initial Temp CSV", "", 1, filter, "CSV files", 0);
+        if (file) strncpy_s(initTempPath, sizeof(initTempPath), file, _TRUNCATE);
+    }
+
+    ImGui::InputFloat("Duration (s)", &simDuration, 0.1f, 1.0f, "%.1f");
+    ImGui::InputFloat("Time Step (s)", &timeStep, 0.01f, 0.1f, "%.3f");
+    ImGui::InputInt("Number of Slices", &nSlices);
+    ImGui::InputInt("Points Per Layer", &pointsPerLayer);
+    ImGui::Checkbox("Use Adaptive Time Step", &useAdaptiveTimeStep);
+    ImGui::InputFloat("Theta Parameter", &theta, 0.05f, 0.1f, "%.2f");
+    ImGui::InputText("Output File", outputFile, sizeof(outputFile));
+
+    // Clamp inputs to reasonable values
+    if (simDuration <= 0) simDuration = 0.1f;
+    if (timeStep <= 0) timeStep = 0.001f;
+    if (nSlices < 1) nSlices = 1;
+    if (pointsPerLayer < 2) pointsPerLayer = 2;
+    theta = std::clamp(theta, 0.0f, 1.0f); // Clamp theta [0, 1]
+
+    if (triggerSimulation) {
+        ImGui::BeginDisabled(true); // Disable button while running
+        ImGui::Button("Running...");
+        ImGui::EndDisabled();
+    } else {
+       if (ImGui::Button("Run Simulation")) {
+            triggerSimulation = true; // This will trigger the logic in the main loop
+            simulationCompleted = false;
+            progress = 0.0f;
+            appLog.clear();
+            currentProcessingStatus = "Starting simulation...";
+        }
+    }
+
+    ImGui::SameLine();
+    if (ImGui::Button("Reset All")) {
+        resetSimulation();
+    }
+
+    ImGui::Separator();
+    ImGui::ProgressBar(progress, ImVec2(-1, 0));
+    if (!currentProcessingStatus.empty()) {
+        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "%s", currentProcessingStatus.c_str());
+    }
+
+    // Log window
+    ImGui::Separator();
+    ImGui::Text("Log:");
+    ImGui::BeginChild("LogScrollingRegion", ImVec2(0, ImGui::GetTextLineHeightWithSpacing() * 8), true, ImGuiWindowFlags_HorizontalScrollbar); // Limit height
+    ImGui::TextUnformatted(appLog.c_str());
+     if(ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) // Auto-scroll
+           ImGui::SetScrollHereY(1.0f);
+    ImGui::EndChild();
+
+    ImGui::End(); // End Simulation Controls Window
+}
+
+// Helper function to draw the mesh with temperature colors (only if simulation completed)
+void drawMeshWithTemperatures(const MeshHandler& mesh, const HeatEquationSolver& completedSolver) {
+    const auto& vertices = mesh.getVertices();
+    const auto& faces = mesh.getFaces();
+    const auto& Tdist = completedSolver.getTemperatureDistribution(); // Use the completed solver results
+
+    if (vertices.empty() || faces.empty() || Tdist.empty()) return;
+
+    // Calculate exact temperature range from temperature distribution
+    double minTemp = *std::min_element(Tdist.begin(), Tdist.end());
+    double maxTemp = *std::max_element(Tdist.begin(), Tdist.end());
+    
+    double tempRange = maxTemp - minTemp;
+    if (tempRange <= 0) tempRange = 1.0; // Avoid division by zero
+
+    // After Y-Z swap, we want to use Y coordinates (visualized as Z) for mapping
+    // Calculate min and max Y for mapping, which becomes Z in visualization
+    double yMin = mesh.getMinY(); // This is the min of what becomes Z in visualization
+    double yMax = mesh.getMaxY(); // This is the max of what becomes Z in visualization
+    double depthRange = yMax - yMin;
+    
+    if (depthRange <= 0) depthRange = 1.0; // Avoid division by zero
+
+    glBegin(GL_TRIANGLES);
+    for (const auto& face : faces) {
+        // Get vertices for this face
+        const auto& v1 = vertices[face[0]];
+        const auto& v2 = vertices[face[1]];
+        const auto& v3 = vertices[face[2]];
+
+        // Calculate normal with Y-Z swapped coordinates
+        auto normal = calculateNormalWithYZSwap(v1, v2, v3);
+        glNormal3d(normal[0], normal[1], normal[2]); // Set normal per face
+
+        // Calculate average Y position of this face (becomes Z in visualization)
+        double avgY = (v1[1] + v2[1] + v3[1]) / 3.0;
+        
+        // Map Y position to normalized position in distribution array
+        double normalizedPos = (avgY - yMin) / depthRange;
+        normalizedPos = std::clamp(normalizedPos, 0.0, 1.0);
+        
+        // Calculate temperature at this position by interpolating from distribution
+        int index = static_cast<int>(normalizedPos * (Tdist.size() - 1));
+        int nextIndex = std::min(index + 1, static_cast<int>(Tdist.size() - 1));
+        double fraction = normalizedPos * (Tdist.size() - 1) - index;
+        
+        double temp;
+        if (index == nextIndex) {
+            temp = Tdist[index];
+        } else {
+            temp = Tdist[index] * (1 - fraction) + Tdist[nextIndex] * fraction;
+        }
+        
+        // Convert temperature to color (red=hot to blue=cold)
+        float t = static_cast<float>((temp - minTemp) / tempRange);
+        t = std::clamp(t, 0.0f, 1.0f); // Clamp [0, 1]
+        
+        // Apply color to all vertices of this face
+        glColor3f(t, 0.0f, 1.0f - t);  // Red to Blue gradient
+
+        // Draw all vertices with Y-Z swap
+        for (int i = 0; i < 3; ++i) {
+            drawVertexWithYZSwap(vertices[face[i]]);
+        }
+    }
+    glEnd();
+}
+
+// Helper function to draw mesh with TPU thickness visualization
+void drawMeshWithThickness(const MeshHandler& mesh, const HeatEquationSolver& solver) {
+    const auto& vertices = mesh.getVertices();
+    const auto& faces = mesh.getFaces();
+
+    if (vertices.empty() || faces.empty()) return;
+
+    // After Y-Z swap, we want to use Y coordinates (visualized as Z) for color mapping
+    double yMin = mesh.getMinY(); // Min of new Z axis (former Y)
+    double yMax = mesh.getMaxY(); // Max of new Z axis (former Y)
+    double depthRange = yMax - yMin;
+    
+    if (depthRange <= 0) depthRange = 1.0; // Avoid division by zero
+
+    // Load TPS thickness data from summary file if available
+    struct SliceData {
+        int sliceNumber;  // Add slice number for tracking
+        double lL;
+        double tpsThickness;
+    };
+    std::vector<SliceData> sliceData;
+    
+    // Try to load from summary_output.csv first (contains optimal TPS thickness)
+    std::ifstream summaryFile("summary_output.csv");
+    if (summaryFile.is_open()) {
+        std::string line;
+        // Skip header
+        std::getline(summaryFile, line);
+        
+        while (std::getline(summaryFile, line)) {
+            std::stringstream ss(line);
+            std::string token;
+            
+            // Read slice number
+            std::getline(ss, token, ',');
+            int sliceNum = std::stoi(token);
+            
+            // Read l/L
+            std::getline(ss, token, ',');
+            double lL = std::stod(token);
+            
+            // Skip method
+            std::getline(ss, token, ',');
+            
+            // Skip final steel temperature
+            std::getline(ss, token, ',');
+            
+            // Read TPS thickness
+            std::getline(ss, token, ',');
+            double tpsThickness = std::stod(token);
+            
+            // Ensure we have a positive value (sometimes optimization returns negative values)
+            if (tpsThickness > 0) {
+                sliceData.push_back({sliceNum, lL, tpsThickness});
+            }
+        }
+        summaryFile.close();
+    }
+
+    // If summary_output.csv didn't work, try stack_details.csv (contains initial TPS thickness)
+    if (sliceData.empty()) {
+        std::ifstream detailsFile("stack_details.csv");
+        if (detailsFile.is_open()) {
+            std::string line;
+            // Skip header
+            std::getline(detailsFile, line);
+            
+            while (std::getline(detailsFile, line)) {
+                std::stringstream ss(line);
+                std::string token;
+                
+                // Read slice number
+                std::getline(ss, token, ',');
+                int sliceNum = std::stoi(token);
+                
+                // Read l/L
+                std::getline(ss, token, ',');
+                double lL = std::stod(token);
+                
+                // Read TPS thickness
+                std::getline(ss, token, ',');
+                double tpsThickness = std::stod(token);
+                
+                sliceData.push_back({sliceNum, lL, tpsThickness});
+            }
+            detailsFile.close();
+        }
+    }
+
+    // If no data was loaded from CSV files, use default values without logging errors
+    if (sliceData.empty()) {
+        // Default thickness values as a fallback - ensure we cover the ENTIRE mesh
+        for (int i = 0; i < nSlices; i++) {
+            // Reverse the order so slice 1 is at the bottom (l/L = 0.0)
+            double lL = (nSlices > 1) ? static_cast<double>(i) / (nSlices - 1) : 0.5;
+            sliceData.push_back({nSlices - i, lL, 0.001}); // Reverse slice number
+        }
+    }
+
+    // Find min/max thickness for color mapping directly from sliceData
+    double minThickness = DBL_MAX;
+    double maxThickness = -DBL_MAX;
+    
+    for (const auto& slice : sliceData) {
+        if (slice.tpsThickness < minThickness) minThickness = slice.tpsThickness;
+        if (slice.tpsThickness > maxThickness) maxThickness = slice.tpsThickness;
+    }
+    
+    if (minThickness == DBL_MAX) minThickness = 0.0;
+    double thicknessRange = maxThickness - minThickness;
+    if (thicknessRange <= 0) thicknessRange = 1.0; // Avoid division by zero
+    
+    // Sort slice data by l/L value (from start to end)
+    std::sort(sliceData.begin(), sliceData.end(), 
+             [](const SliceData& a, const SliceData& b) { return a.lL < b.lL; });
+    
+    // Calculate slice boundaries along the Y axis (which becomes Z in visualization)
+    // NOTE: We reverse the slice order so that slice 1 is at the bottom (yMin)
+    std::vector<double> sliceBoundaries;
+    if (nSlices > 1) {
+        // Use nSlices+1 boundaries to define nSlices regions
+        for (int i = 0; i <= nSlices; i++) {
+            double boundary = yMin + (static_cast<double>(i) / nSlices) * depthRange;
+            sliceBoundaries.push_back(boundary);
+        }
+    } else {
+        // If only one slice, use the entire Y range
+        sliceBoundaries.push_back(yMin);
+        sliceBoundaries.push_back(yMax);
+    }
+
+    // Draw mesh with color based on TPS thickness
+    glBegin(GL_TRIANGLES);
+    for (const auto& face : faces) {
+        // Get vertices for this face
+        const auto& v1 = vertices[face[0]];
+        const auto& v2 = vertices[face[1]];
+        const auto& v3 = vertices[face[2]];
+
+        // Calculate normal with Y-Z swapped coordinates
+        auto normal = calculateNormalWithYZSwap(v1, v2, v3);
+        glNormal3d(normal[0], normal[1], normal[2]);
+
+        // Determine the average Y position of this face (becomes Z in visualization)
+        double avgY = (v1[1] + v2[1] + v3[1]) / 3.0;
+        
+        // Find which slice this face belongs to
+        int sliceIndex = 0;
+        for (size_t i = 0; i < sliceBoundaries.size() - 1; i++) {
+            if (avgY >= sliceBoundaries[i] && avgY <= sliceBoundaries[i+1]) {
+                sliceIndex = i;
+                break;
+            }
+        }
+        
+        // Map slice index to l/L value - use evenly distributed l/L values
+        // But reverse the mapping so that slice 1 (bottom) has l/L = 0
+        double sliceLL = (nSlices > 1) ? 
+                      static_cast<double>(sliceIndex) / (nSlices - 1) : 
+                      0.5;
+        
+        // Find the corresponding slice data - need to match reversed slice numbering
+        double thickness = 0.001; // Default
+        int reversedSliceIndex = nSlices - 1 - sliceIndex; // Convert to the right slice number
+        int actualSliceNumber = sliceIndex + 1; // Original slice number (1-based)
+        
+        for (const auto& slice : sliceData) {
+            // Use approximate comparison for floating point
+            if (fabs(slice.lL - sliceLL) < 0.01 || 
+                (slice.sliceNumber == actualSliceNumber)) {
+                thickness = slice.tpsThickness;
+                break;
+            }
+        }
+        
+        // Map thickness to color (yellow to green)
+        float t = static_cast<float>((thickness - minThickness) / thicknessRange);
+        t = std::clamp(t, 0.0f, 1.0f);
+        
+        // Yellow (thick) to Green (thin) gradient
+        glColor3f(1.0f - t, 1.0f, 0.0f);
+        
+        // Draw all vertices with Y-Z swap
+        for (int i = 0; i < 3; ++i) {
+            drawVertexWithYZSwap(vertices[face[i]]);
+        }
+    }
+    glEnd();
+}
+
+// Helper function to draw horizontal slice planes at different Z positions
+void drawSliceLines(const MeshHandler& mesh) {
+    if (!meshLoadedForVis || nSlices <= 1) return;
+
+    // Calculate min and max bounds of the mesh directly from MeshHandler
+    // After Y-Z swap, Y becomes Z and Z becomes Y in the visualization
+    double xMin = mesh.getMinX();
+    double xMax = mesh.getMaxX();
+    double yMin = mesh.getMinY(); // This becomes zMin in visualization
+    double yMax = mesh.getMaxY(); // This becomes zMax in visualization (fixed typo)
+    double zMin = mesh.getMinZ(); // This becomes yMin in visualization
+    double zMax = mesh.getMaxZ(); // This becomes yMax in visualization
+    
+    // We want to slice along the new Z axis (which was Y before the swap)
+    double depthMin = yMin; // Min of new Z axis (former Y)
+    double depthMax = yMax; // Max of new Z axis (former Y)
+    double depthRange = depthMax - depthMin;
+    
+    if (depthRange <= 0) depthRange = 1.0; // Avoid division by zero
+
+    // Extend boundaries a bit for better visibility
+    double xExtend = (xMax - xMin) * 0.1;
+    double yExtend = (zMax - zMin) * 0.1; // Y in visualization is the former Z
+    xMin -= xExtend;
+    xMax += xExtend;
+    double yMin_viz = zMin - yExtend; // Y in visualization is former Z
+    double yMax_viz = zMax + yExtend;
+
+    // Calculate slice positions along the NEW Z-axis (former Y) - depth axis after swap
+    std::vector<double> sliceZPositions; // Z in visualization is the former Y
+    for (int slice = 0; slice < nSlices; ++slice) {
+        // Ensure we cover the ENTIRE range from depthMin to depthMax inclusively
+        double depth = depthMin + ((nSlices > 1) ? (double(slice) / (nSlices - 1)) * depthRange : depthRange / 2.0);
+        sliceZPositions.push_back(depth); // This Y value becomes Z in visualization
+    }
+
+    // Save the current OpenGL state
+    GLboolean depthTestEnabled;
+    glGetBooleanv(GL_DEPTH_TEST, &depthTestEnabled);
+    glDisable(GL_DEPTH_TEST); // Disable depth testing so lines are visible
+    glDisable(GL_LIGHTING);   // Disable lighting for lines
+
+    // Set line properties
+    glLineWidth(2.0f);        // Increase line width for visibility
+    
+    // Draw slice planes as vertical quads with slight transparency
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    
+    for (double z_vis : sliceZPositions) {
+        // Draw semi-transparent quad for each slice plane at depth Z
+        // After Y-Z swap, the Y axis in simulation becomes the Z axis in visualization
+        glBegin(GL_QUADS);
+        glColor4f(0.0f, 0.8f, 0.8f, 0.2f); // Cyan with 20% opacity
+        glVertex3d(xMin, yMin_viz, z_vis); // Z is the depth in visualization (was Y)
+        glVertex3d(xMax, yMin_viz, z_vis); 
+        glVertex3d(xMax, yMax_viz, z_vis);
+        glVertex3d(xMin, yMax_viz, z_vis);
+        glEnd();
+        
+        // Draw the outline of the slice plane
+        glBegin(GL_LINE_LOOP);
+        glColor3f(0.0f, 1.0f, 1.0f); // Solid cyan for the outline
+        glVertex3d(xMin, yMin_viz, z_vis);
+        glVertex3d(xMax, yMin_viz, z_vis);
+        glVertex3d(xMax, yMax_viz, z_vis);
+        glVertex3d(xMin, yMax_viz, z_vis);
+        glEnd();
+    }
+    
+    glDisable(GL_BLEND);
+
+    // Restore OpenGL state
+    glLineWidth(1.0f);
+    glEnable(GL_LIGHTING);
+    if (depthTestEnabled) {
+        glEnable(GL_DEPTH_TEST); // Restore depth testing state
+    }
+}
+
+// Helper function to draw the mesh with default material
+void drawMeshDefault(const MeshHandler& mesh) {
+    const auto& vertices = mesh.getVertices();
+    const auto& faces = mesh.getFaces();
+
+     if (vertices.empty() || faces.empty()) return;
+
+    // Set a default material color (e.g., grey)
+    glColor3f(0.7f, 0.7f, 0.7f);
+
+    // Use basic lighting materials
+    GLfloat material_diffuse[] = { 0.7f, 0.7f, 0.7f, 1.0f };
+    GLfloat material_ambient[] = { 0.3f, 0.3f, 0.3f, 1.0f };
+    GLfloat material_specular[] = { 0.2f, 0.2f, 0.2f, 1.0f }; // Less shiny
+    GLfloat material_shininess = 10.0f; // Lower shininess
+
+    glMaterialfv(GL_FRONT, GL_AMBIENT, material_ambient);
+    glMaterialfv(GL_FRONT, GL_DIFFUSE, material_diffuse);
+    glMaterialfv(GL_FRONT, GL_SPECULAR, material_specular);
+    glMaterialf(GL_FRONT, GL_SHININESS, material_shininess);
+
+    glBegin(GL_TRIANGLES);
+    for (const auto& face : faces) {
+         // Calculate face normal for proper lighting (flat shading)
+         const auto& v1 = vertices[face[0]];
+         const auto& v2 = vertices[face[1]];
+         const auto& v3 = vertices[face[2]];
+
+         auto normal = calculateNormalWithYZSwap(v1, v2, v3);
+         glNormal3d(normal[0], normal[1], normal[2]); // Set normal once per face
+
+        for (int i = 0; i < 3; ++i) {
+            const auto& vertex = vertices[face[i]];
+            drawVertexWithYZSwap(vertex);
+        }
+    }
+    glEnd();
+}
+
+// Helper function to draw a color scale for temperature or thickness visualization
+void drawColorScale(int x, int y, int width, int height, bool isTemperature) {
+    // Draw background
+    ImGui::SetNextWindowPos(ImVec2(x, y));
+    ImGui::SetNextWindowSize(ImVec2(width, height));
+    ImGui::Begin("##colorscale", nullptr, 
+                ImGuiWindowFlags_NoTitleBar | 
+                ImGuiWindowFlags_NoResize | 
+                ImGuiWindowFlags_NoMove | 
+                ImGuiWindowFlags_NoScrollbar);
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    
+    // Get window position for absolute coordinates
+    ImVec2 pos = ImGui::GetCursorScreenPos();
+    
+    // Draw gradient
+    const int barHeight = height - 60; // Leave room for text
+    const int barWidth = 30;
+    const int startX = pos.x + 10;
+    const int startY = pos.y + 10;
+    
+    // Draw gradient bar
+    for (int i = 0; i < barHeight; i++) {
+        float t = 1.0f - (float)i / barHeight; // 1.0 at top, 0.0 at bottom
+        ImVec4 color;
+        if (isTemperature) {
+            // Red to Blue gradient for temperature
+            color = ImVec4(t, 0.0f, 1.0f - t, 1.0f);
+        } else {
+            // Yellow to Green gradient for thickness (matching the mesh visualization)
+            color = ImVec4(1.0f - t, 1.0f, 0.0f, 1.0f);
+        }
+        ImU32 col32 = ImGui::ColorConvertFloat4ToU32(color);
+        draw_list->AddRectFilled(
+            ImVec2(startX, startY + i), 
+            ImVec2(startX + barWidth, startY + i + 1), 
+            col32);
+    }
+    
+    // Draw labels
+    draw_list->AddRect(
+        ImVec2(startX, startY), 
+        ImVec2(startX + barWidth, startY + barHeight), 
+        IM_COL32_WHITE);
+    
+    if (isTemperature) {
+        // Get min/max temperature from solver if available
+        double minTemp = 273.0; // Default min (0°C)
+        double maxTemp = solver.getTemperatureDistribution().empty() ? 
+                        800.0 : solver.getTemperatureDistribution().back(); // Default max
+        
+        // Draw temperature labels
+        std::string maxLabel = "Max: " + std::to_string((int)maxTemp) + "K";
+        std::string minLabel = "Min: " + std::to_string((int)minTemp) + "K";
+        draw_list->AddText(ImVec2(startX + barWidth + 5, startY), IM_COL32_WHITE, maxLabel.c_str());
+        draw_list->AddText(ImVec2(startX + barWidth + 5, startY + barHeight - 15), IM_COL32_WHITE, minLabel.c_str());
+        
+        // Title
+        ImGui::SetCursorPos(ImVec2(10, barHeight + 20));
+        ImGui::Text("Temperature (K)");
+    } else {
+        // Get min/max TPU thickness from the simulation data
+        double minThickness = DBL_MAX;
+        double maxThickness = -DBL_MAX;
+
+        std::ifstream summaryFile("summary_output.csv");
+        if (summaryFile.is_open()) {
+            std::string line;
+            std::getline(summaryFile, line); // Skip header
+            while (std::getline(summaryFile, line)) {
+                std::stringstream ss(line);
+                std::string token;
+                std::getline(ss, token, ','); // slice
+                std::getline(ss, token, ','); // l/L
+                std::getline(ss, token, ','); // method
+                std::getline(ss, token, ','); // finalSteelTemp
+                std::getline(ss, token, ','); // TPS_thickness
+                double thickness = std::stod(token);
+                if (thickness > 0) {
+                    if (thickness < minThickness) minThickness = thickness;
+                    if (thickness > maxThickness) maxThickness = thickness;
+                }
+            }
+            summaryFile.close();
+        } else {
+            std::ifstream detailsFile("stack_details.csv");
+            if (detailsFile.is_open()) {
+                std::string line;
+                std::getline(detailsFile, line); // Skip header
+                while (std::getline(detailsFile, line)) {
+                    std::stringstream ss(line);
+                    std::string token;
+                    std::getline(ss, token, ','); // slice
+                    std::getline(ss, token, ','); // l/L
+                    std::getline(ss, token, ','); // TPS_thickness
+                    double thickness = std::stod(token);
+                    if (thickness < minThickness) minThickness = thickness;
+                    if (thickness > maxThickness) maxThickness = thickness;
+                }
+                detailsFile.close();
+            }
+        }
+
+        if (minThickness == DBL_MAX) minThickness = 0.0;
+        if (maxThickness == -DBL_MAX) maxThickness = 0.001; // Default max if no data
+
+        // Draw thickness labels
+        std::string maxLabel = "Max: " + std::to_string(maxThickness).substr(0, 8) + "m";
+        std::string minLabel = "Min: " + std::to_string(minThickness).substr(0, 8) + "m";
+        draw_list->AddText(ImVec2(startX + barWidth + 5, startY), IM_COL32_WHITE, maxLabel.c_str());
+        draw_list->AddText(ImVec2(startX + barWidth + 5, startY + barHeight - 15), IM_COL32_WHITE, minLabel.c_str());
+        
+        // Title
+        ImGui::SetCursorPos(ImVec2(10, barHeight + 20));
+        ImGui::Text("TPU Thickness (m)");
+    }
+    
+    ImGui::End();
+}
+
+// Helper function to draw temperature line plot
+void drawTemperaturePlot(int x, int y, int width, int height) {
+    // Position and size the plot window
+    ImGui::SetNextWindowPos(ImVec2(x, y));
+    ImGui::SetNextWindowSize(ImVec2(width, height));
+    ImGui::Begin("Temperature Plot", nullptr, 
+                ImGuiWindowFlags_NoMove | 
+                ImGuiWindowFlags_NoResize | 
+                ImGuiWindowFlags_NoCollapse);
+
+    // Check if we have temperature data
+    const auto& Tdist = solver.getTemperatureDistribution();
+    if (Tdist.empty()) {
+        ImGui::Text("No temperature data available. Run a simulation first.");
+        ImGui::End();
+        return;
+    }
+
+    // Load the final temperature data from CSV if the solver doesn't have it
+    std::vector<double> xPos;
+    std::vector<double> temps;
+    
+    // Try to load from the final_temperature.csv file
+    std::ifstream tempFile("final_temperature.csv");
+    if (tempFile.is_open()) {
+        std::string line;
+        // Skip header
+        std::getline(tempFile, line);
+        
+        while (std::getline(tempFile, line)) {
+            std::stringstream ss(line);
+            std::string token;
+            
+            // Read position
+            std::getline(ss, token, ',');
+            xPos.push_back(std::stod(token));
+            
+            // Read temperature
+            std::getline(ss, token, ',');
+            temps.push_back(std::stod(token));
+        }
+        tempFile.close();
+    } else {
+        // If file can't be opened, use basic positions
+        // Create simple position data instead of accessing stack
+        for (size_t i = 0; i < Tdist.size(); i++) {
+            xPos.push_back(static_cast<double>(i) / (Tdist.size() > 1 ? Tdist.size() - 1 : 1));
+            temps.push_back(Tdist[i]);
+        }
+    }
+
+    // Check if we have data to plot
+    if (xPos.empty() || temps.empty() || xPos.size() != temps.size()) {
+        ImGui::Text("Temperature data is incomplete or invalid.");
+        ImGui::End();
+        return;
+    }
+
+    // Calculate plot ranges
+    double xMin = *std::min_element(xPos.begin(), xPos.end());
+    double xMax = *std::max_element(xPos.begin(), xPos.end());
+    double yMin = *std::min_element(temps.begin(), temps.end());
+    double yMax = *std::max_element(temps.begin(), temps.end());
+    
+    // Add some margin to the y-range
+    double yMargin = (yMax - yMin) * 0.05;
+    if (yMargin < 1.0) yMargin = 1.0;
+    yMin -= yMargin;
+    yMax += yMargin;
+
+    // Set up plot
+    ImGui::Text("Temperature Distribution (Final)");
+    ImGui::Separator();
+
+    // Add some information about the temperature range
+    ImGui::Text("Temperature Range: %.1f K - %.1f K", yMin, yMax);
+    ImGui::Text("Position Range: %.3f m - %.3f m", xMin, xMax);
+
+    // Calculate plot area size
+    const float plotHeight = height - 120; // Leave room for text and margins
+    const float plotWidth = width - 50;    // Leave room for margins
+    
+    // Get the cursor position for the plot
+    ImVec2 plotPos = ImGui::GetCursorScreenPos();
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+
+    // Draw axes
+    const float axisOffsetX = 40;  // Left margin for y-axis labels
+    const float axisOffsetY = 20;  // Bottom margin for x-axis labels
+    const float tickSize = 5.0f;
+    const ImU32 axisColor = IM_COL32(255, 255, 255, 255); // White
+    
+    // Y-axis
+    drawList->AddLine(
+        ImVec2(plotPos.x + axisOffsetX, plotPos.y),
+        ImVec2(plotPos.x + axisOffsetX, plotPos.y + plotHeight),
+        axisColor, 1.5f
+    );
+    
+    // X-axis
+    drawList->AddLine(
+        ImVec2(plotPos.x + axisOffsetX, plotPos.y + plotHeight),
+        ImVec2(plotPos.x + plotWidth, plotPos.y + plotHeight),
+        axisColor, 1.5f
+    );
+    
+    // Draw plot title and axis labels
+    ImGui::SetCursorPos(ImVec2(width/2 - 80, 5));
+    ImGui::Text("Temperature Distribution");
+    
+    // Y-axis label
+    ImGui::SetCursorPos(ImVec2(5, plotHeight/2 - 20));
+    ImGui::Text("Temperature (K)");
+    
+    // X-axis label
+    ImGui::SetCursorPos(ImVec2(width/2 - 50, plotHeight + 25));
+    ImGui::Text("Position (m)");
+
+    // Draw ticks and labels on axes
+    // Y-axis ticks (5 ticks)
+    for (int i = 0; i <= 5; i++) {
+        float y = plotPos.y + plotHeight - (i * plotHeight / 5);
+        double tempValue = yMin + (i * (yMax - yMin) / 5);
+        
+        // Tick
+        drawList->AddLine(
+            ImVec2(plotPos.x + axisOffsetX - tickSize, y),
+            ImVec2(plotPos.x + axisOffsetX, y),
+            axisColor
+        );
+        
+        // Label
+        char label[32];
+        snprintf(label, sizeof(label), "%.0f", tempValue);
+        drawList->AddText(
+            ImVec2(plotPos.x + axisOffsetX - 35, y - 8),
+            axisColor, label
+        );
+    }
+    
+    // X-axis ticks (5 ticks)
+    for (int i = 0; i <= 5; i++) {
+        float x = plotPos.x + axisOffsetX + (i * (plotWidth - axisOffsetX) / 5);
+        double posValue = xMin + (i * (xMax - xMin) / 5);
+        
+        // Tick
+        drawList->AddLine(
+            ImVec2(x, plotPos.y + plotHeight),
+            ImVec2(x, plotPos.y + plotHeight + tickSize),
+            axisColor
+        );
+        
+        // Label
+        char label[32];
+        snprintf(label, sizeof(label), "%.2f", posValue);
+        drawList->AddText(
+            ImVec2(x - 15, plotPos.y + plotHeight + 8),
+            axisColor, label
+        );
+    }
+    
+    // Draw the temperature graph
+    if (temps.size() >= 2) {
+        // Convert data points to screen coordinates
+        std::vector<ImVec2> points;
+        for (size_t i = 0; i < temps.size(); i++) {
+            float x = plotPos.x + axisOffsetX + ((xPos[i] - xMin) / (xMax - xMin)) * (plotWidth - axisOffsetX);
+            float y = plotPos.y + plotHeight - ((temps[i] - yMin) / (yMax - yMin)) * plotHeight;
+            points.push_back(ImVec2(x, y));
+        }
+        
+        // Draw the line connecting data points
+        const ImU32 lineColor = IM_COL32(255, 0, 0, 255); // Red
+        for (size_t i = 0; i < points.size() - 1; i++) {
+            drawList->AddLine(points[i], points[i+1], lineColor, 2.0f);
+        }
+        
+        // Draw data points
+        const ImU32 pointColor = IM_COL32(255, 255, 0, 255); // Yellow
+        for (const auto& point : points) {
+            drawList->AddCircleFilled(point, 3.0f, pointColor);
+        }
+    }
+    
+    // Try to load material layer info from stack_details.csv
+    std::vector<std::pair<std::string, double>> layerBoundaries;
+    std::ifstream detailsFile("stack_details.csv");
+    if (detailsFile.is_open()) {
+        // Read header to get column positions
+        std::string header;
+        std::getline(detailsFile, header);
+        std::stringstream headerSS(header);
+        std::string col;
+        std::vector<std::string> columns;
+        
+        while (std::getline(headerSS, col, ',')) {
+            columns.push_back(col);
+        }
+        
+        // Read the first row for information
+        std::string firstRow;
+        if (std::getline(detailsFile, firstRow)) {
+            std::stringstream ss(firstRow);
+            std::vector<std::string> values;
+            std::string val;
+            
+            while (std::getline(ss, val, ',')) {
+                values.push_back(val);
+            }
+            
+            // Get layer thicknesses
+            double position = 0.0;
+            for (size_t i = 2; i < std::min(columns.size(), values.size()); i++) {
+                if (columns[i].find("thickness") != std::string::npos) {
+                    std::string material = columns[i].substr(0, columns[i].find("_thickness"));
+                    if (!material.empty() && values[i].find_first_not_of("0123456789.-") == std::string::npos) {
+                        double thickness = std::stod(values[i]);
+                        if (thickness > 0) {
+                            layerBoundaries.push_back({material, position});
+                            position += thickness;
+                        }
+                    }
+                }
+            }
+            
+            // Add end boundary if we found any layers
+            if (!layerBoundaries.empty()) {
+                layerBoundaries.push_back({"End", position});
+            }
+        }
+        detailsFile.close();
+    }
+    
+    // Draw material region markers if we have layer data
+    if (!layerBoundaries.empty()) {
+        for (size_t i = 0; i < layerBoundaries.size(); i++) {
+            const auto& [material, position] = layerBoundaries[i];
+            
+            // Only draw if within the viewable range
+            if (position >= xMin && position <= xMax) {
+                // Calculate screen x-coordinate for this position
+                float screenX = plotPos.x + axisOffsetX + 
+                    ((position - xMin) / (xMax - xMin)) * (plotWidth - axisOffsetX);
+                
+                // Draw vertical line at layer boundary
+                ImU32 boundaryColor = IM_COL32(200, 200, 200, 128); // Light gray, semi-transparent
+                drawList->AddLine(
+                    ImVec2(screenX, plotPos.y),
+                    ImVec2(screenX, plotPos.y + plotHeight),
+                    boundaryColor
+                );
+                
+                // Add layer name if not the end boundary
+                if (i < layerBoundaries.size() - 1) {
+                    float nextPos = layerBoundaries[i+1].second;
+                    float midPoint = (position + nextPos) / 2.0f;
+                    
+                    // Calculate x for middle of region
+                    float textX = plotPos.x + axisOffsetX + 
+                        ((midPoint - xMin) / (xMax - xMin)) * (plotWidth - axisOffsetX);
+                    
+                    // Position text at bottom of plot
+                    drawList->AddText(
+                        ImVec2(textX - 20, plotPos.y + plotHeight - 15),
+                        IM_COL32(200, 200, 200, 180),
+                        material.c_str()
+                    );
+                }
+            }
+        }
+    }
+    
+    ImGui::End();
 }
 
 // ---- Simulation Logic ----
@@ -397,645 +1360,6 @@ void runSimulationLogic() {
     }
 }
 
-// ---- GUI Simulation Controls ----
-void renderSimulationControls() {
-    // This window will be explicitly sized and positioned in the main loop
-    ImGui::Begin("HeatStack Simulation");
-
-    if (ImGui::InputText("Mesh Path", meshPath, sizeof(meshPath))) {
-        meshLoadedForVis = false; // Reset vis flag if path changes
-        simulationCompleted = false; // Results are invalid if mesh changes
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Browse Mesh")) {
-        const char* filter[] = { "*.obj", "*.csv" };
-        const char* file = tinyfd_openFileDialog("Select Mesh", "", 2, filter, "OBJ or CSV files", 0);
-        if (file) {
-            strncpy_s(meshPath, sizeof(meshPath), file, _TRUNCATE);
-            meshLoadedForVis = false; // Reset vis flag
-            simulationCompleted = false; // Results are invalid
-        }
-    }
-
-    ImGui::InputText("Initial Temp (.csv)", initTempPath, sizeof(initTempPath));
-    ImGui::SameLine();
-    if (ImGui::Button("Browse Temp")) {
-        const char* filter[] = { "*.csv" };
-        const char* file = tinyfd_openFileDialog("Select Initial Temp CSV", "", 1, filter, "CSV files", 0);
-        if (file) strncpy_s(initTempPath, sizeof(initTempPath), file, _TRUNCATE);
-    }
-
-    ImGui::InputFloat("Duration (s)", &simDuration, 0.1f, 1.0f, "%.1f");
-    ImGui::InputFloat("Time Step (s)", &timeStep, 0.01f, 0.1f, "%.3f");
-    ImGui::InputInt("Number of Slices", &nSlices);
-    ImGui::InputInt("Points Per Layer", &pointsPerLayer);
-    ImGui::Checkbox("Use Adaptive Time Step", &useAdaptiveTimeStep);
-    ImGui::InputFloat("Theta Parameter", &theta, 0.05f, 0.1f, "%.2f");
-    ImGui::InputText("Output File", outputFile, sizeof(outputFile));
-
-    // Clamp inputs to reasonable values
-    if (simDuration <= 0) simDuration = 0.1f;
-    if (timeStep <= 0) timeStep = 0.001f;
-    if (nSlices < 1) nSlices = 1;
-    if (pointsPerLayer < 2) pointsPerLayer = 2;
-    theta = std::clamp(theta, 0.0f, 1.0f); // Clamp theta [0, 1]
-
-    if (triggerSimulation) {
-        ImGui::BeginDisabled(true); // Disable button while running
-        ImGui::Button("Running...");
-        ImGui::EndDisabled();
-    } else {
-       if (ImGui::Button("Run Simulation")) {
-            triggerSimulation = true; // This will trigger the logic in the main loop
-            simulationCompleted = false;
-            progress = 0.0f;
-            appLog.clear();
-            currentProcessingStatus = "Starting simulation...";
-        }
-    }
-
-    ImGui::SameLine();
-    if (ImGui::Button("Reset All")) {
-        resetSimulation();
-    }
-
-    ImGui::Separator();
-    ImGui::ProgressBar(progress, ImVec2(-1, 0));
-    if (!currentProcessingStatus.empty()) {
-        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "%s", currentProcessingStatus.c_str());
-    }
-
-    // Log window
-    ImGui::Separator();
-    ImGui::Text("Log:");
-    ImGui::BeginChild("LogScrollingRegion", ImVec2(0, ImGui::GetTextLineHeightWithSpacing() * 8), true, ImGuiWindowFlags_HorizontalScrollbar); // Limit height
-    ImGui::TextUnformatted(appLog.c_str());
-     if(ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) // Auto-scroll
-           ImGui::SetScrollHereY(1.0f);
-    ImGui::EndChild();
-
-    ImGui::End(); // End Simulation Controls Window
-}
-
-// Helper function to draw coordinate axes
-void drawCoordinateAxes() {
-    // Make axes smaller and relative to mesh size? For now, fixed size.
-    float axisLength = 0.5f; // Adjust as needed
-    glLineWidth(2.0f);
-    glBegin(GL_LINES);
-        // X axis (red) - horizontal
-        glColor3f(1.0f, 0.0f, 0.0f);
-        glVertex3f(0.0f, 0.0f, 0.0f);
-        glVertex3f(axisLength, 0.0f, 0.0f);
-        
-        // Y axis (blue) - depth
-        glColor3f(0.0f, 0.0f, 1.0f);
-        glVertex3f(0.0f, 0.0f, 0.0f);
-        glVertex3f(0.0f, axisLength, 0.0f);
-        
-        // Z axis (green) - vertical (this is the axis used for stacks)
-        glColor3f(0.0f, 1.0f, 0.0f);
-        glVertex3f(0.0f, 0.0f, 0.0f);
-        glVertex3f(0.0f, 0.0f, axisLength);
-    glEnd();
-    glLineWidth(1.0f);
-}
-
-// Helper function to draw vertical lines at slice positions
-void drawSliceLines(const MeshHandler& mesh) {
-    if (!meshLoadedForVis || nSlices <= 1) return;
-
-    // Calculate min and max bounds of the mesh directly from MeshHandler
-    double xMin = mesh.getMinX();
-    double xMax = mesh.getMaxX();
-    double yMin = mesh.getMinY();
-    double yMax = mesh.getMaxY();
-    double zMin = mesh.getMinZ();
-    double zMax = mesh.getMaxZ();
-    double height = zMax - zMin;
-    
-    if (height <= 0) height = 1.0; // Avoid division by zero
-
-    // Extend boundaries a bit for better visibility
-    double xExtend = (xMax - xMin) * 0.05;
-    double yExtend = (yMax - yMin) * 0.05;
-    xMin -= xExtend;
-    xMax += xExtend;
-    yMin -= yExtend;
-    yMax += yExtend;
-
-    // Calculate slice positions along the Z-axis (toe to head)
-    std::vector<double> sliceZPositions;
-    for (int slice = 0; slice < nSlices; ++slice) {
-        // Ensure we cover the ENTIRE range from zMin to zMax inclusively
-        double z = zMin + ((nSlices > 1) ? (double(slice) / (nSlices - 1)) * height : height / 2.0);
-        sliceZPositions.push_back(z);
-    }
-
-    // Log slice positions and bounds for debugging
-    appLog += "Drawing slice lines:\n";
-    appLog += "Mesh bounds: X=[" + std::to_string(xMin) + ", " + std::to_string(xMax) + "], "
-            + "Y=[" + std::to_string(yMin) + ", " + std::to_string(yMax) + "], "
-            + "Z=[" + std::to_string(zMin) + ", " + std::to_string(zMax) + "]\n";
-    
-    for (size_t i = 0; i < sliceZPositions.size(); ++i) {
-        double z = sliceZPositions[i];
-        double lL = (height > 0) ? ((z - zMin) / height) : 0.5;
-        appLog += "Slice " + std::to_string(i + 1) + ": Z=" + std::to_string(z) +
-                 ", l/L=" + std::to_string(lL) + "\n";
-    }
-
-    // Save the current depth testing state
-    GLboolean depthTestEnabled;
-    glGetBooleanv(GL_DEPTH_TEST, &depthTestEnabled);
-    glDisable(GL_DEPTH_TEST); // Disable depth testing so lines are visible
-
-    // Disable lighting for lines
-    glDisable(GL_LIGHTING);
-
-    // Set line properties
-    glLineWidth(2.0f); // Increase line width for visibility
-    glColor3f(0.0f, 1.0f, 1.0f); // Cyan color for better contrast
-
-    glBegin(GL_LINES);
-    for (double z : sliceZPositions) {
-        // In the unrotated coordinate system, Z is already vertical
-        // Draw horizontal grid lines at each slice height
-        
-        // Draw lines along X axis at specific Z height
-        glVertex3d(xMin, yMin, z);
-        glVertex3d(xMax, yMin, z);
-        glVertex3d(xMin, yMax, z);
-        glVertex3d(xMax, yMax, z);
-        
-        // Draw lines along Y axis at specific Z height
-        glVertex3d(xMin, yMin, z);
-        glVertex3d(xMin, yMax, z);
-        glVertex3d(xMax, yMin, z);
-        glVertex3d(xMax, yMax, z);
-    }
-    glEnd();
-
-    // Reset OpenGL state
-    glLineWidth(1.0f);
-    glEnable(GL_LIGHTING);
-    if (depthTestEnabled) {
-        glEnable(GL_DEPTH_TEST); // Restore depth testing state
-    }
-}
-
-// Helper function to draw the mesh with temperature colors (only if simulation completed)
-void drawMeshWithTemperatures(const MeshHandler& mesh, const HeatEquationSolver& completedSolver) {
-    const auto& vertices = mesh.getVertices();
-    const auto& faces = mesh.getFaces();
-    const auto& Tdist = completedSolver.getTemperatureDistribution(); // Use the completed solver results
-
-    if (vertices.empty() || faces.empty() || Tdist.empty()) return;
-
-    // Calculate exact temperature range from temperature distribution
-    double minTemp = *std::min_element(Tdist.begin(), Tdist.end());
-    double maxTemp = *std::max_element(Tdist.begin(), Tdist.end());
-    
-    double tempRange = maxTemp - minTemp;
-    if (tempRange <= 0) tempRange = 1.0; // Avoid division by zero
-
-    // Calculate min and max Z for mapping
-    double zMin = mesh.getMinZ();
-    double zMax = mesh.getMaxZ();
-    double height = zMax - zMin;
-    if (height <= 0) height = 1.0; // Avoid division by zero
-
-    // Log temperature range for debugging
-    appLog += "Temperature visualization range: " + std::to_string(minTemp) + "K to " + std::to_string(maxTemp) + "K\n";
-    appLog += "Mesh Z range: " + std::to_string(zMin) + " to " + std::to_string(zMax) + "\n";
-
-    glBegin(GL_TRIANGLES);
-    for (const auto& face : faces) {
-        // Compute average face normal for flat shading (simple lighting)
-        const auto& v1 = vertices[face[0]];
-        const auto& v2 = vertices[face[1]];
-        const auto& v3 = vertices[face[2]];
-
-        double nx = (v2[1] - v1[1]) * (v3[2] - v1[2]) - (v2[2] - v1[2]) * (v3[1] - v1[1]);
-        double ny = (v2[2] - v1[2]) * (v3[0] - v1[0]) - (v2[0] - v1[0]) * (v3[2] - v1[2]);
-        double nz = (v2[0] - v1[0]) * (v3[1] - v1[1]) - (v2[1] - v1[1]) * (v3[0] - v1[0]);
-        double len = sqrt(nx*nx + ny*ny + nz*nz);
-        if (len > 0) { nx /= len; ny /= len; nz /= len; }
-        glNormal3d(nx, ny, nz); // Set normal per face
-
-        // Calculate average Z position of this face
-        double avgZ = (v1[2] + v2[2] + v3[2]) / 3.0;
-        
-        // Map Z position to normalized position in distribution array
-        double normalizedPos = (avgZ - zMin) / height;
-        normalizedPos = std::clamp(normalizedPos, 0.0, 1.0);
-        
-        // Calculate temperature at this position by interpolating from distribution
-        int index = static_cast<int>(normalizedPos * (Tdist.size() - 1));
-        int nextIndex = std::min(index + 1, static_cast<int>(Tdist.size() - 1));
-        double fraction = normalizedPos * (Tdist.size() - 1) - index;
-        
-        double temp;
-        if (index == nextIndex) {
-            temp = Tdist[index];
-        } else {
-            temp = Tdist[index] * (1 - fraction) + Tdist[nextIndex] * fraction;
-        }
-        
-        // Convert temperature to color (red=hot to blue=cold)
-        float t = static_cast<float>((temp - minTemp) / tempRange);
-        t = std::clamp(t, 0.0f, 1.0f); // Clamp [0, 1]
-        
-        // Apply color to all vertices of this face
-        glColor3f(t, 0.0f, 1.0f - t);  // Red to Blue gradient
-
-        // Draw all vertices
-        for (int i = 0; i < 3; ++i) {
-            int vertexIdx = face[i];
-            const auto& vertex = vertices[vertexIdx];
-            double vertexDouble[3] = {static_cast<double>(vertex[0]), 
-                                     static_cast<double>(vertex[1]), 
-                                     static_cast<double>(vertex[2])};
-            glVertex3dv(vertexDouble);
-        }
-    }
-    glEnd();
-}
-
-// Helper function to draw the mesh with default material
-void drawMeshDefault(const MeshHandler& mesh) {
-    const auto& vertices = mesh.getVertices();
-    const auto& faces = mesh.getFaces();
-
-     if (vertices.empty() || faces.empty()) return;
-
-    // Set a default material color (e.g., grey)
-    glColor3f(0.7f, 0.7f, 0.7f);
-
-    // Use basic lighting materials
-    GLfloat material_diffuse[] = { 0.7f, 0.7f, 0.7f, 1.0f };
-    GLfloat material_ambient[] = { 0.3f, 0.3f, 0.3f, 1.0f };
-    GLfloat material_specular[] = { 0.2f, 0.2f, 0.2f, 1.0f }; // Less shiny
-    GLfloat material_shininess = 10.0f; // Lower shininess
-
-    glMaterialfv(GL_FRONT, GL_AMBIENT, material_ambient);
-    glMaterialfv(GL_FRONT, GL_DIFFUSE, material_diffuse);
-    glMaterialfv(GL_FRONT, GL_SPECULAR, material_specular);
-    glMaterialf(GL_FRONT, GL_SHININESS, material_shininess);
-
-    glBegin(GL_TRIANGLES);
-    for (const auto& face : faces) {
-         // Calculate face normal for proper lighting (flat shading)
-         const auto& v1 = vertices[face[0]];
-         const auto& v2 = vertices[face[1]];
-         const auto& v3 = vertices[face[2]];
-
-         double nx = (v2[1] - v1[1]) * (v3[2] - v1[2]) - (v2[2] - v1[2]) * (v3[1] - v1[1]);
-         double ny = (v2[2] - v1[2]) * (v3[0] - v1[0]) - (v2[0] - v1[0]) * (v3[2] - v1[2]);
-         double nz = (v2[0] - v1[0]) * (v3[1] - v1[1]) - (v2[1] - v1[1]) * (v3[0] - v1[0]);
-         double len = sqrt(nx*nx + ny*ny + nz*nz);
-         if (len > 0) { nx /= len; ny /= len; nz /= len; }
-
-         glNormal3d(nx, ny, nz); // Set normal once per face
-
-        for (int i = 0; i < 3; ++i) {
-            const auto& vertex = vertices[face[i]];
-            // Convert float vector to double for glVertex3dv
-            double vertexDouble[3] = {static_cast<double>(vertex[0]), 
-                                    static_cast<double>(vertex[1]), 
-                                    static_cast<double>(vertex[2])};
-            glVertex3dv(vertexDouble);
-        }
-    }
-    glEnd();
-}
-
-// Helper function to draw mesh with TPU thickness visualization
-void drawMeshWithThickness(const MeshHandler& mesh, const HeatEquationSolver& solver) {
-    const auto& vertices = mesh.getVertices();
-    const auto& faces = mesh.getFaces();
-
-    if (vertices.empty() || faces.empty()) return;
-
-    // Calculate min and max Z for slicing
-    double zMin = mesh.getMinZ();
-    double zMax = mesh.getMaxZ();
-    double height = zMax - zMin;
-    if (height <= 0) height = 1.0; // Avoid division by zero
-
-    // Load TPS thickness data from summary file if available
-    struct SliceData {
-        int sliceNumber;  // Add slice number for tracking
-        double lL;
-        double tpsThickness;
-    };
-    std::vector<SliceData> sliceData;
-    
-    // Try to load from summary_output.csv first (contains optimal TPS thickness)
-    std::ifstream summaryFile("summary_output.csv");
-    if (summaryFile.is_open()) {
-        std::string line;
-        // Skip header
-        std::getline(summaryFile, line);
-        
-        while (std::getline(summaryFile, line)) {
-            std::stringstream ss(line);
-            std::string token;
-            
-            // Read slice number
-            std::getline(ss, token, ',');
-            int sliceNum = std::stoi(token);
-            
-            // Read l/L
-            std::getline(ss, token, ',');
-            double lL = std::stod(token);
-            
-            // Skip method
-            std::getline(ss, token, ',');
-            
-            // Skip final steel temperature
-            std::getline(ss, token, ',');
-            
-            // Read TPS thickness
-            std::getline(ss, token, ',');
-            double tpsThickness = std::stod(token);
-            
-            // Ensure we have a positive value (sometimes optimization returns negative values)
-            if (tpsThickness > 0) {
-                sliceData.push_back({sliceNum, lL, tpsThickness});
-            }
-        }
-        summaryFile.close();
-    }
-
-    // If summary_output.csv didn't work, try stack_details.csv (contains initial TPS thickness)
-    if (sliceData.empty()) {
-        std::ifstream detailsFile("stack_details.csv");
-        if (detailsFile.is_open()) {
-            std::string line;
-            // Skip header
-            std::getline(detailsFile, line);
-            
-            while (std::getline(detailsFile, line)) {
-                std::stringstream ss(line);
-                std::string token;
-                
-                // Read slice number
-                std::getline(ss, token, ',');
-                int sliceNum = std::stoi(token);
-                
-                // Read l/L
-                std::getline(ss, token, ',');
-                double lL = std::stod(token);
-                
-                // Read TPS thickness
-                std::getline(ss, token, ',');
-                double tpsThickness = std::stod(token);
-                
-                sliceData.push_back({sliceNum, lL, tpsThickness});
-            }
-            detailsFile.close();
-        }
-    }
-
-    // If no data was loaded from CSV files, log an error and use a default thickness
-    if (sliceData.empty()) {
-        appLog += "❌ Error: Could not load TPS thickness data from summary_output.csv or stack_details.csv.\n";
-        appLog += "Using default thickness values for visualization.\n";
-        
-        // Default thickness values as a fallback - ensure we cover the ENTIRE mesh
-        for (int i = 0; i < nSlices; i++) {
-            double lL = (nSlices > 1) ? static_cast<double>(i) / (nSlices - 1) : 0.5;
-            sliceData.push_back({i + 1, lL, 0.001}); // Default thickness of 0.001m
-        }
-    }
-
-    // Find min/max thickness for color mapping directly from sliceData
-    double minThickness = DBL_MAX;
-    double maxThickness = -DBL_MAX;
-    
-    for (const auto& slice : sliceData) {
-        if (slice.tpsThickness < minThickness) minThickness = slice.tpsThickness;
-        if (slice.tpsThickness > maxThickness) maxThickness = slice.tpsThickness;
-    }
-    
-    if (minThickness == DBL_MAX) minThickness = 0.0;
-    double thicknessRange = maxThickness - minThickness;
-    if (thicknessRange <= 0) thicknessRange = 1.0; // Avoid division by zero
-    
-    // Log thickness range for debugging
-    appLog += "Using TPS thickness values from simulation data.\n";
-    appLog += "Thickness range: " + std::to_string(minThickness) + " to " + std::to_string(maxThickness) + "m\n";
-    
-    // Sort slice data by l/L value (from feet to head)
-    std::sort(sliceData.begin(), sliceData.end(), 
-             [](const SliceData& a, const SliceData& b) { return a.lL < b.lL; });
-    
-    // Calculate slice boundaries in Z-space - ensure COMPLETE coverage
-    std::vector<double> sliceBoundaries;
-    if (nSlices > 1) {
-        // Use nSlices+1 boundaries to define nSlices regions
-        for (int i = 0; i <= nSlices; i++) {
-            double boundary = zMin + (static_cast<double>(i) / nSlices) * height;
-            sliceBoundaries.push_back(boundary);
-        }
-    } else {
-        // If only one slice, use the entire Z range
-        sliceBoundaries.push_back(zMin);
-        sliceBoundaries.push_back(zMax);
-    }
-
-    // Log slice boundaries for debugging
-    appLog += "Slice boundaries (Z-axis): ";
-    for (double boundary : sliceBoundaries) {
-        appLog += std::to_string(boundary) + " ";
-    }
-    appLog += "\n";
-
-    // Draw mesh with color based on TPS thickness
-    glBegin(GL_TRIANGLES);
-    for (const auto& face : faces) {
-        // Compute face normal for lighting
-        const auto& v1 = vertices[face[0]];
-        const auto& v2 = vertices[face[1]];
-        const auto& v3 = vertices[face[2]];
-
-        double nx = (v2[1] - v1[1]) * (v3[2] - v1[2]) - (v2[2] - v1[2]) * (v3[1] - v1[1]);
-        double ny = (v2[2] - v1[2]) * (v3[0] - v1[0]) - (v2[0] - v1[0]) * (v3[2] - v1[2]);
-        double nz = (v2[0] - v1[0]) * (v3[1] - v1[1]) - (v2[1] - v1[1]) * (v3[0] - v1[0]);
-        double len = sqrt(nx*nx + ny*ny + nz*nz);
-        if (len > 0) { nx /= len; ny /= len; nz /= len; }
-        glNormal3d(nx, ny, nz);
-
-        // Determine the average Z position of this face to assign it to a specific slice
-        double avgZ = (v1[2] + v2[2] + v3[2]) / 3.0;
-        
-        // Find which slice this face belongs to
-        int sliceIndex = 0;
-        for (size_t i = 0; i < sliceBoundaries.size() - 1; i++) {
-            if (avgZ >= sliceBoundaries[i] && avgZ <= sliceBoundaries[i+1]) {
-                sliceIndex = i;
-                break;
-            }
-        }
-        
-        // Map slice index to l/L value - use evenly distributed l/L values
-        double sliceLL = (nSlices > 1) ? 
-                      static_cast<double>(sliceIndex) / (nSlices - 1) : 
-                      0.5;
-        
-        // Find the corresponding slice data
-        double thickness = 0.001; // Default
-        for (const auto& slice : sliceData) {
-            // Use approximate comparison for floating point
-            if (fabs(slice.lL - sliceLL) < 0.01 || 
-                (slice.sliceNumber == sliceIndex + 1)) {
-                thickness = slice.tpsThickness;
-                break;
-            }
-        }
-        
-        // Map thickness to color (yellow to green)
-        float t = static_cast<float>((thickness - minThickness) / thicknessRange);
-        t = std::clamp(t, 0.0f, 1.0f);
-        
-        // Yellow (thick) to Green (thin) gradient
-        glColor3f(1.0f - t, 1.0f, 0.0f);
-        
-        // Draw all vertices with the same color for this face
-        for (int i = 0; i < 3; ++i) {
-            int vertexIdx = face[i];
-            const auto& vertex = vertices[vertexIdx];
-            double vertexDouble[3] = {static_cast<double>(vertex[0]), 
-                                     static_cast<double>(vertex[1]), 
-                                     static_cast<double>(vertex[2])};
-            glVertex3dv(vertexDouble);
-        }
-    }
-    glEnd();
-}
-
-// Helper function to draw a color scale for temperature or thickness visualization
-void drawColorScale(int x, int y, int width, int height, bool isTemperature) {
-    // Draw background
-    ImGui::SetNextWindowPos(ImVec2(x, y));
-    ImGui::SetNextWindowSize(ImVec2(width, height));
-    ImGui::Begin("##colorscale", nullptr, 
-                ImGuiWindowFlags_NoTitleBar | 
-                ImGuiWindowFlags_NoResize | 
-                ImGuiWindowFlags_NoMove | 
-                ImGuiWindowFlags_NoScrollbar);
-
-    ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    
-    // Get window position for absolute coordinates
-    ImVec2 pos = ImGui::GetCursorScreenPos();
-    
-    // Draw gradient
-    const int barHeight = height - 60; // Leave room for text
-    const int barWidth = 30;
-    const int startX = pos.x + 10;
-    const int startY = pos.y + 10;
-    
-    // Draw gradient bar
-    for (int i = 0; i < barHeight; i++) {
-        float t = 1.0f - (float)i / barHeight; // 1.0 at top, 0.0 at bottom
-        ImVec4 color;
-        if (isTemperature) {
-            // Red to Blue gradient for temperature
-            color = ImVec4(t, 0.0f, 1.0f - t, 1.0f);
-        } else {
-            // Yellow to Green gradient for thickness (matching the mesh visualization)
-            color = ImVec4(1.0f - t, 1.0f, 0.0f, 1.0f);
-        }
-        ImU32 col32 = ImGui::ColorConvertFloat4ToU32(color);
-        draw_list->AddRectFilled(
-            ImVec2(startX, startY + i), 
-            ImVec2(startX + barWidth, startY + i + 1), 
-            col32);
-    }
-    
-    // Draw labels
-    draw_list->AddRect(
-        ImVec2(startX, startY), 
-        ImVec2(startX + barWidth, startY + barHeight), 
-        IM_COL32_WHITE);
-    
-    if (isTemperature) {
-        // Get min/max temperature from solver if available
-        double minTemp = 273.0; // Default min (0°C)
-        double maxTemp = solver.getTemperatureDistribution().empty() ? 
-                        800.0 : solver.getTemperatureDistribution().back(); // Default max
-        
-        // Draw temperature labels
-        std::string maxLabel = "Max: " + std::to_string((int)maxTemp) + "K";
-        std::string minLabel = "Min: " + std::to_string((int)minTemp) + "K";
-        draw_list->AddText(ImVec2(startX + barWidth + 5, startY), IM_COL32_WHITE, maxLabel.c_str());
-        draw_list->AddText(ImVec2(startX + barWidth + 5, startY + barHeight - 15), IM_COL32_WHITE, minLabel.c_str());
-        
-        // Title
-        ImGui::SetCursorPos(ImVec2(10, barHeight + 20));
-        ImGui::Text("Temperature (K)");
-    } else {
-        // Get min/max TPU thickness from the simulation data
-        double minThickness = DBL_MAX;
-        double maxThickness = -DBL_MAX;
-
-        std::ifstream summaryFile("summary_output.csv");
-        if (summaryFile.is_open()) {
-            std::string line;
-            std::getline(summaryFile, line); // Skip header
-            while (std::getline(summaryFile, line)) {
-                std::stringstream ss(line);
-                std::string token;
-                std::getline(ss, token, ','); // slice
-                std::getline(ss, token, ','); // l/L
-                std::getline(ss, token, ','); // method
-                std::getline(ss, token, ','); // finalSteelTemp
-                std::getline(ss, token, ','); // TPS_thickness
-                double thickness = std::stod(token);
-                if (thickness > 0) {
-                    if (thickness < minThickness) minThickness = thickness;
-                    if (thickness > maxThickness) maxThickness = thickness;
-                }
-            }
-            summaryFile.close();
-        } else {
-            std::ifstream detailsFile("stack_details.csv");
-            if (detailsFile.is_open()) {
-                std::string line;
-                std::getline(detailsFile, line); // Skip header
-                while (std::getline(detailsFile, line)) {
-                    std::stringstream ss(line);
-                    std::string token;
-                    std::getline(ss, token, ','); // slice
-                    std::getline(ss, token, ','); // l/L
-                    std::getline(ss, token, ','); // TPS_thickness
-                    double thickness = std::stod(token);
-                    if (thickness < minThickness) minThickness = thickness;
-                    if (thickness > maxThickness) maxThickness = thickness;
-                }
-                detailsFile.close();
-            }
-        }
-
-        if (minThickness == DBL_MAX) minThickness = 0.0;
-        if (maxThickness == -DBL_MAX) maxThickness = 0.001; // Default max if no data
-
-        // Draw thickness labels
-        std::string maxLabel = "Max: " + std::to_string(maxThickness).substr(0, 8) + "m";
-        std::string minLabel = "Min: " + std::to_string(minThickness).substr(0, 8) + "m";
-        draw_list->AddText(ImVec2(startX + barWidth + 5, startY), IM_COL32_WHITE, maxLabel.c_str());
-        draw_list->AddText(ImVec2(startX + barWidth + 5, startY + barHeight - 15), IM_COL32_WHITE, minLabel.c_str());
-        
-        // Title
-        ImGui::SetCursorPos(ImVec2(10, barHeight + 20));
-        ImGui::Text("TPU Thickness (m)");
-    }
-    
-    ImGui::End();
-}
-
 // ---- Visualization Controls Window ----
 void renderVisualizationControls() {
     // This window will also be explicitly positioned and sized in the main loop
@@ -1043,6 +1367,7 @@ void renderVisualizationControls() {
 
     ImGui::Checkbox("Enable Camera Movement", &cameraMovementEnabled);
     ImGui::Checkbox("Wireframe Mode", &renderWireframe);
+    ImGui::Checkbox("Show Mesh", &showMesh); // NEW: Toggle for mesh visibility
     ImGui::Checkbox("Show Color Scale", &showColorScale);
     ImGui::Checkbox("Show Slice Lines", &showSliceLines);
     
@@ -1064,6 +1389,10 @@ void renderVisualizationControls() {
     ImGui::SameLine();
     if (ImGui::RadioButton("TPU Thickness", currentVisMode == THICKNESS_VIS)) {
         currentVisMode = THICKNESS_VIS;
+    }
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Line Plot", currentVisMode == LINE_PLOT_VIS)) { // NEW: Line plot mode
+        currentVisMode = LINE_PLOT_VIS;
     }
 
     ImGui::Separator();
@@ -1095,7 +1424,7 @@ void renderVisualization(int vx, int vy, int vw, int vh, bool isHovered) {
 
         // Zoom: Mouse Wheel
         if (io.MouseWheel != 0.0f) {
-            camDistance -= io.MouseWheel * zoomSensitivity;
+            camDistance -= io.MouseWheel * zoomSensitivity * camDistance * 0.1f;
             camDistance = std::clamp(camDistance, 0.1f, 50.0f); // Clamp distance
         }
 
@@ -1106,22 +1435,38 @@ void renderVisualization(int vx, int vy, int vw, int vh, bool isHovered) {
             ImGui::ResetMouseDragDelta(ImGuiMouseButton_Left);
 
             camAzimuth += dragDelta.x * mouseSensitivity;
-            camElevation += dragDelta.y * mouseSensitivity;
+            camElevation -= dragDelta.y * mouseSensitivity; // Inverted to match natural movement
 
             // Clamp elevation to avoid flipping
             camElevation = std::clamp(camElevation, -89.9f, 89.9f);
         }
         
-        // Pan: Right Mouse Drag (moves the target point without changing distance)
+        // Pan: Right Mouse Drag - move in screen space without changing distance
         if (ImGui::IsMouseDragging(ImGuiMouseButton_Right)) {
             ImVec2 dragDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Right);
-            // Reset delta start pos for continuous dragging
             ImGui::ResetMouseDragDelta(ImGuiMouseButton_Right);
             
+            // Calculate camera right and up vectors for proper screen-space panning
+            float azimuthRad = camAzimuth * M_PI / 180.0f;
+            float elevationRad = camElevation * M_PI / 180.0f;
+            
+            // Right vector (perpendicular to view direction in horizontal plane)
+            float rightX = -sin(azimuthRad);
+            float rightY = cos(azimuthRad);
+            float rightZ = 0.0f;
+            
+            // Up vector (aligned with world up, adjusted for elevation)
+            float upX = -sin(elevationRad) * cos(azimuthRad);
+            float upY = -sin(elevationRad) * sin(azimuthRad);
+            float upZ = cos(elevationRad);
+            
+            // Calculate pan amount based on camera distance (farther = faster pan)
+            float panSpeed = panSensitivity * camDistance;
+            
             // Apply panning movement
-            float panSpeed = 0.01f * camDistance; // Scale by distance for consistent feel
-            camTargetX += dragDelta.x * panSpeed;
-            camTargetZ += dragDelta.y * panSpeed;
+            camTargetX += (rightX * dragDelta.x - upX * dragDelta.y) * panSpeed;
+            camTargetY += (rightY * dragDelta.x - upY * dragDelta.y) * panSpeed;
+            camTargetZ += (rightZ * dragDelta.x - upZ * dragDelta.y) * panSpeed;
         }
     }
 
@@ -1137,12 +1482,12 @@ void renderVisualization(int vx, int vy, int vw, int vh, bool isHovered) {
     glLoadIdentity();
 
     // Calculate camera position using spherical coordinates (orbit)
-    // Using Z as the up axis by default - matching simulation coordinates
+    // Using Z as the up axis to ensure the mesh stands on its feet (Z is vertical)
     float camX = camTargetX + camDistance * cos(camElevation * M_PI / 180.0f) * sin(camAzimuth * M_PI / 180.0f);
     float camY = camTargetY + camDistance * cos(camElevation * M_PI / 180.0f) * cos(camAzimuth * M_PI / 180.0f);
     float camZ = camTargetZ + camDistance * sin(camElevation * M_PI / 180.0f);
 
-    // Use lookAtGL with Z as up vector to match simulation coordinates
+    // Use lookAtGL with Z as up vector (vertical axis)
     lookAtGL(camX, camY, camZ,             // Eye position
              camTargetX, camTargetY, camTargetZ, // Target position
              0.0f, 0.0f, 1.0f);           // Up vector (Z is up)
@@ -1175,32 +1520,16 @@ void renderVisualization(int vx, int vy, int vw, int vh, bool isHovered) {
     // --- Drawing ---
     glPushMatrix();
     
-    // No need to rotate the mesh - keep original coordinates where Z is already vertical
+    // Set initial camera orientation
+    // No rotation needed as we're already using Z as the up (vertical) axis
 
     // Add scaling to handle size differences
     float meshScaleFactor = 1.0f;  // Adjust this if mesh is too large or small
     glScalef(meshScaleFactor, meshScaleFactor, meshScaleFactor);
     
     // Center the mesh automatically
-    if (meshLoadedForVis) {
-        // Get the vertices
-        const auto& vertices = meshHandler.getVertices();
-        
-        // Calculate min/max for all axes using the MeshHandler's methods
-        float minX = meshHandler.getMinX();
-        float maxX = meshHandler.getMaxX();
-        float minY = meshHandler.getMinY();
-        float maxY = meshHandler.getMaxY();
-        float minZ = meshHandler.getMinZ();
-        float maxZ = meshHandler.getMaxZ();
-        
-        // Calculate center - keeping the original coordinate system intact
-        double centerX = 0.5 * (minX + maxX);
-        double centerY = 0.5 * (minY + maxY);
-        double centerZ = 0.5 * (minZ + maxZ);
-        
-        // Center the mesh - simply translate to center
-        glTranslatef(-centerX, -centerY, -centerZ);
+    if (meshLoadedForVis && autoAdjustCameraOnLoad) {
+        updateMeshVisualization(); // Use helper function to update visualization
     }
 
     // Draw coordinate axes
@@ -1217,40 +1546,54 @@ void renderVisualization(int vx, int vy, int vw, int vh, bool isHovered) {
 
     // Load mesh for visualization if path is set and not yet loaded
     if (!meshLoadedForVis && strlen(meshPath) > 0) {
-        if (meshHandler.loadMesh(meshPath)) {
-            meshLoadedForVis = true;
-            appLog += "✅ Mesh loaded successfully for visualization.\n";
-        } else {
-            appLog += "❌ Error loading mesh for visualization: " + std::string(meshPath) + "\n";
+        try {
+            if (meshHandler.loadMesh(meshPath)) {
+                meshLoadedForVis = true;
+                autoAdjustCameraOnLoad = true; // Force camera adjustment on new mesh load
+                appLog += "✅ Mesh loaded successfully for visualization.\n";
+            } else {
+                appLog += "❌ Error loading mesh for visualization: " + std::string(meshPath) + "\n";
+                meshPath[0] = '\0'; // Clear invalid path
+            }
+        } catch (const std::exception& e) {
+            appLog += "❌ Exception loading mesh: " + std::string(e.what()) + "\n";
             meshPath[0] = '\0'; // Clear invalid path
         }
     }
 
     // Draw the mesh based on the selected visualization mode
-    if (meshLoadedForVis) {
-        if (currentVisMode == TEMPERATURE_VIS && simulationCompleted && !solver.getTemperatureDistribution().empty()) {
-            drawMeshWithTemperatures(meshHandler, solver); // Temperature visualization
-        } else if (currentVisMode == THICKNESS_VIS) {
-            drawMeshWithThickness(meshHandler, solver); // TPU thickness visualization
-        } else {
-            drawMeshDefault(meshHandler); // Default material
+    if (meshLoadedForVis && showMesh) {  // Respect the showMesh toggle
+        // Only render in 3D mode if not in line plot mode
+        if (currentVisMode != LINE_PLOT_VIS) {
+            if (currentVisMode == TEMPERATURE_VIS && simulationCompleted && !solver.getTemperatureDistribution().empty()) {
+                drawMeshWithTemperatures(meshHandler, solver); // Temperature visualization
+            } else if (currentVisMode == THICKNESS_VIS) {
+                drawMeshWithThickness(meshHandler, solver); // TPU thickness visualization
+            } else {
+                drawMeshDefault(meshHandler); // Default material
+            }
+
+            // Draw slice lines if enabled
+            if (showSliceLines) {
+                drawSliceLines(meshHandler);
+            }
         }
     }
-
-    // Draw slice lines if enabled
-    if (showSliceLines && meshLoadedForVis) {
-        drawSliceLines(meshHandler);
-    }
-
+    
     glPopMatrix();
 
-    // Draw color scale if enabled
-    if (showColorScale) {
+    // Draw color scale if enabled and not in line plot mode
+    if (showColorScale && currentVisMode != LINE_PLOT_VIS) {
         int scaleWidth = 150;
         int scaleHeight = 300;
         int scaleX = vx + vw - scaleWidth - 10; // Position near the right edge
         int scaleY = vy + 10; // Position near the top
         drawColorScale(scaleX, scaleY, scaleWidth, scaleHeight, currentVisMode == TEMPERATURE_VIS);
+    }
+    
+    // Draw temperature line plot if that mode is selected
+    if (currentVisMode == LINE_PLOT_VIS) {
+        drawTemperaturePlot(vx + 10, vy + 10, vw - 20, vh - 20);
     }
 
     // --- Cleanup OpenGL state for this viewport ---
