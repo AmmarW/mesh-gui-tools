@@ -1339,6 +1339,34 @@ void runSimulationLogic() {
             double origTempGlue = (idxGlueSteel < Tdist.size()) ? Tdist[idxGlueSteel] : 0.0;
             double origTempSteel = Tdist.back(); // Assume last point is steel surface
 
+            // Export final temperature distribution for each slice - Original version
+            {
+                std::ofstream outFile("final_temperature_orig_slice_" + std::to_string(slice+1) + ".csv");
+                if (outFile) {
+                    outFile << "x,Temperature\n"; // Add header
+                    for (size_t i = 0; i < Tdist.size(); ++i) {
+                        outFile << stack.xGrid[i] << "," << Tdist[i] << "\n";
+                    }
+                    outFile.close();
+                } else {
+                    appLog += "❌ Error: Could not open final_temperature_orig_slice_" + std::to_string(slice+1) + ".csv for writing.\n";
+                }
+                
+                // Also save to final_temperature_orig.csv if it's the last slice
+                if (slice == nSlices - 1) {
+                    std::ofstream finalOutFile("final_temperature_orig.csv");
+                    if (finalOutFile) {
+                        finalOutFile << "x,Temperature\n"; // Add header
+                        for (size_t i = 0; i < Tdist.size(); ++i) {
+                            finalOutFile << stack.xGrid[i] << "," << Tdist[i] << "\n";
+                        }
+                        finalOutFile.close();
+                    } else {
+                        appLog += "❌ Error: Could not open final_temperature_orig.csv for writing.\n";
+                    }
+                }
+            }
+
             // Suggest optimal TPS thickness
             currentProcessingStatus = "Optimizing TPS thickness for stack " + std::to_string(slice + 1);
             double tpsOpt = -1.0; // Default invalid value
@@ -1457,6 +1485,65 @@ void runSimulationLogic() {
                 if (slice == nSlices - 1) {
                     solver = solverOpt; // Store the solver state globally for visualization
                 }
+
+                // Export final temperature distribution for each slice - Optimized version
+                if (tpsOpt > 0 && postTempSteel > 0) {
+                    const auto& Topt = solverOpt.getTemperatureDistribution();
+                    std::ofstream outFile("final_temperature_opt_slice_" + std::to_string(slice+1) + ".csv");
+                    if (outFile) {
+                        outFile << "x,Temperature\n"; // Add header
+                        for (size_t i = 0; i < Topt.size(); ++i) {
+                            outFile << stack.xGrid[i] << "," << Topt[i] << "\n";
+                        }
+                        outFile.close();
+                    } else {
+                        appLog += "❌ Error: Could not open final_temperature_opt_slice_" + std::to_string(slice+1) + ".csv for writing.\n";
+                    }
+                    
+                    // Also save to final_temperature_opt.csv if it's the last slice
+                    if (slice == nSlices - 1) {
+                        std::ofstream finalOutFile("final_temperature_opt.csv");
+                        if (finalOutFile) {
+                            finalOutFile << "x,Temperature\n"; // Add header
+                            for (size_t i = 0; i < Topt.size(); ++i) {
+                                finalOutFile << stack.xGrid[i] << "," << Topt[i] << "\n";
+                            }
+                            finalOutFile.close();
+                        } else {
+                            appLog += "❌ Error: Could not open final_temperature_opt.csv for writing.\n";
+                        }
+                    }
+                }
+
+                // For compatibility, still save combined final temperature file (using optimized if available)
+                {
+                    std::ofstream outFile("final_temperature_slice_" + std::to_string(slice+1) + ".csv");
+                    if (outFile) {
+                        outFile << "x,Temperature\n"; // Add header
+                        const auto& finalTdist = (postTempSteel > 0) ? solverOpt.getTemperatureDistribution() : Tdist;
+                        for (size_t i = 0; i < finalTdist.size(); ++i) {
+                            outFile << stack.xGrid[i] << "," << finalTdist[i] << "\n";
+                        }
+                        outFile.close();
+                    } else {
+                        appLog += "❌ Error: Could not open final_temperature_slice_" + std::to_string(slice+1) + ".csv for writing.\n";
+                    }
+                    
+                    // Also save to final_temperature.csv if it's the last slice (for backward compatibility with visualization)
+                    if (slice == nSlices - 1) {
+                        std::ofstream finalOutFile("final_temperature.csv");
+                        if (finalOutFile) {
+                            finalOutFile << "x,Temperature\n"; // Add header
+                            const auto& finalTdist = (postTempSteel > 0) ? solverOpt.getTemperatureDistribution() : Tdist;
+                            for (size_t i = 0; i < finalTdist.size(); ++i) {
+                                finalOutFile << stack.xGrid[i] << "," << finalTdist[i] << "\n";
+                            }
+                            finalOutFile.close();
+                        } else {
+                            appLog += "❌ Error: Could not open final_temperature.csv for writing.\n";
+                        }
+                    }
+                }
             }
             
 skip_opt_run:
@@ -1490,21 +1577,6 @@ skip_opt_run:
                 
             tSummaryDetailsWrite = std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - out_start).count();
 
-            // Export final temperature distribution for last slice only
-            if (slice == nSlices - 1) {
-                std::ofstream outFile("final_temperature.csv");
-                if (outFile) {
-                    outFile << "x,Temperature\n"; // Add header
-                    const auto& finalTdist = (postTempSteel > 0) ? solver.getTemperatureDistribution() : Tdist;
-                    for (size_t i = 0; i < finalTdist.size(); ++i) {
-                        outFile << stack.xGrid[i] << "," << finalTdist[i] << "\n";
-                    }
-                    outFile.close();
-                } else {
-                    appLog += "❌ Error: Could not open final_temperature.csv for writing.\n";
-                }
-            }
-            
 next_slice:; // Label for jumping to next slice on error
         } // End slice loop
 
@@ -1528,7 +1600,7 @@ next_slice:; // Label for jumping to next slice on error
         appLog += "Optimized solver time:      " + std::to_string(tOptSolve) + " ms\n";
         appLog += "Total computation time:     " + std::to_string(overallMs) + " ms\n";
         appLog += "\n=== Output Files ===\n";
-        appLog += "- final_temperature.csv: Temperature distribution (last slice)\n";
+        appLog += "- final_temperature_slice_*.csv: Temperature distribution for each slice\n";
         appLog += "- " + std::string(outputFile) + ": Summary results\n";
         appLog += "- stack_details.csv: Detailed layer information\n";
         appLog += "- time_history_orig_slice_*.csv: Original time histories\n";

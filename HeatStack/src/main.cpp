@@ -225,7 +225,20 @@ int main(int argc, char* argv[]) {
         }
         tHistOptSave += MS(Clock::now() - saveOpt_start).count();
 
-
+        // Save final temperature distribution for this slice
+        auto saveFinalTemp_start = Clock::now();
+        {
+            std::ofstream finalTempFile(
+                "final_temperature_slice_" + std::to_string(slice+1) + ".csv"
+            );
+            if (finalTempFile) {
+                finalTempFile << "x,Temperature\n"; // Add header
+                const auto& finalTdist = solverOpt.getTemperatureDistribution();
+                for (size_t i = 0; i < finalTdist.size(); ++i) {
+                    finalTempFile << s.xGrid[i] << "," << finalTdist[i] << "\n";
+                }
+            }
+        }
 
         // sample optimized steel temp
         double steelOpt = solverOpt.getTemperatureDistribution().back();
