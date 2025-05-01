@@ -846,186 +846,148 @@ void drawTemperaturePlot(int x, int y, int width, int height) {
     // Position and size the plot window
     ImGui::SetNextWindowPos(ImVec2(x, y));
     ImGui::SetNextWindowSize(ImVec2(width, height));
-    ImGui::Begin("Temperature Plot", nullptr, 
+    ImGui::Begin("Temperature Plots", nullptr, 
                 ImGuiWindowFlags_NoMove | 
                 ImGuiWindowFlags_NoResize | 
                 ImGuiWindowFlags_NoCollapse);
 
-    // Check if we have temperature data
-    const auto& Tdist = solver.getTemperatureDistribution();
-    if (Tdist.empty()) {
-        ImGui::Text("No temperature data available. Run a simulation first.");
-        ImGui::End();
-        return;
-    }
+    // Create a 2x2 grid layout
+    const float plotWidth = (width - 80) / 2;  // Two plots per row with spacing
+    const float plotHeight = (height - 100) / 2; // Two rows with spacing
+    const float horizontalSpacing = 40;
+    const float verticalSpacing = 20;
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
 
-    // Load the final temperature data from CSV if the solver doesn't have it
-    std::vector<double> xPos;
-    std::vector<double> temps;
-    
-    // Try to load from the final_temperature.csv file
-    std::ifstream tempFile("final_temperature.csv");
-    if (tempFile.is_open()) {
+    // Common plot settings
+    const float axisOffsetX = 50;  // Left margin for y-axis labels
+    const float axisOffsetY = 30;  // Bottom margin for x-axis labels
+    const float tickSize = 5.0f;
+    const ImU32 axisColor = IM_COL32(255, 255, 255, 255); // White
+
+    // ---- LOAD DATA ----
+    // Time history data structure
+    struct TimeHistoryData {
+        std::vector<double> time;
+        std::vector<double> carbonGlueTemp;
+        std::vector<double> glueSteelTemp;
+        std::vector<double> steelTemp;
+    };
+
+    TimeHistoryData origData, optData;
+
+    // Load original time history data
+    std::ifstream origHistFile("time_history_orig_slice_10.csv");
+    if (origHistFile.is_open()) {
         std::string line;
         // Skip header
-        std::getline(tempFile, line);
+        std::getline(origHistFile, line);
         
-        while (std::getline(tempFile, line)) {
+        while (std::getline(origHistFile, line)) {
+            std::stringstream ss(line);
+            std::string token;
+            
+            // Read time
+            std::getline(ss, token, ',');
+            origData.time.push_back(std::stod(token));
+            
+            // Read carbon-glue temperature
+            std::getline(ss, token, ',');
+            origData.carbonGlueTemp.push_back(std::stod(token));
+            
+            // Read glue-steel temperature
+            std::getline(ss, token, ',');
+            origData.glueSteelTemp.push_back(std::stod(token));
+            
+            // Read steel temperature
+            std::getline(ss, token, ',');
+            origData.steelTemp.push_back(std::stod(token));
+        }
+        origHistFile.close();
+    }
+
+    // Load optimized time history data
+    std::ifstream optHistFile("time_history_opt_slice_10.csv");
+    if (optHistFile.is_open()) {
+        std::string line;
+        // Skip header
+        std::getline(optHistFile, line);
+        
+        while (std::getline(optHistFile, line)) {
+            std::stringstream ss(line);
+            std::string token;
+            
+            // Read time
+            std::getline(ss, token, ',');
+            optData.time.push_back(std::stod(token));
+            
+            // Read carbon-glue temperature
+            std::getline(ss, token, ',');
+            optData.carbonGlueTemp.push_back(std::stod(token));
+            
+            // Read glue-steel temperature
+            std::getline(ss, token, ',');
+            optData.glueSteelTemp.push_back(std::stod(token));
+            
+            // Read steel temperature
+            std::getline(ss, token, ',');
+            optData.steelTemp.push_back(std::stod(token));
+        }
+        optHistFile.close();
+    }
+
+    // Final temperature data structure
+    struct FinalTempData {
+        std::vector<double> positions;
+        std::vector<double> temperatures;
+    };
+
+    FinalTempData finalOrigData, finalOptData;
+
+    // Load original final temperature data
+    std::ifstream finalOrigFile("final_temperature_orig_slice_10.csv");
+    if (finalOrigFile.is_open()) {
+        std::string line;
+        // Skip header
+        std::getline(finalOrigFile, line);
+        
+        while (std::getline(finalOrigFile, line)) {
             std::stringstream ss(line);
             std::string token;
             
             // Read position
             std::getline(ss, token, ',');
-            xPos.push_back(std::stod(token));
+            finalOrigData.positions.push_back(std::stod(token));
             
             // Read temperature
             std::getline(ss, token, ',');
-            temps.push_back(std::stod(token));
+            finalOrigData.temperatures.push_back(std::stod(token));
         }
-        tempFile.close();
-    } else {
-        // If file can't be opened, use basic positions
-        // Create simple position data instead of accessing stack
-        for (size_t i = 0; i < Tdist.size(); i++) {
-            xPos.push_back(static_cast<double>(i) / (Tdist.size() > 1 ? Tdist.size() - 1 : 1));
-            temps.push_back(Tdist[i]);
-        }
+        finalOrigFile.close();
     }
 
-    // Check if we have data to plot
-    if (xPos.empty() || temps.empty() || xPos.size() != temps.size()) {
-        ImGui::Text("Temperature data is incomplete or invalid.");
-        ImGui::End();
-        return;
-    }
-
-    // Calculate plot ranges
-    double xMin = *std::min_element(xPos.begin(), xPos.end());
-    double xMax = *std::max_element(xPos.begin(), xPos.end());
-    double yMin = *std::min_element(temps.begin(), temps.end());
-    double yMax = *std::max_element(temps.begin(), temps.end());
-    
-    // Add some margin to the y-range
-    double yMargin = (yMax - yMin) * 0.05;
-    if (yMargin < 1.0) yMargin = 1.0;
-    yMin -= yMargin;
-    yMax += yMargin;
-
-    // Set up plot
-    ImGui::Text("Temperature Distribution (Final)");
-    ImGui::Separator();
-
-    // Add some information about the temperature range
-    ImGui::Text("Temperature Range: %.1f K - %.1f K", yMin, yMax);
-    ImGui::Text("Position Range: %.3f m - %.3f m", xMin, xMax);
-
-    // Calculate plot area size
-    const float plotHeight = height - 120; // Leave room for text and margins
-    const float plotWidth = width - 50;    // Leave room for margins
-    
-    // Get the cursor position for the plot
-    ImVec2 plotPos = ImGui::GetCursorScreenPos();
-    ImDrawList* drawList = ImGui::GetWindowDrawList();
-
-    // Draw axes
-    const float axisOffsetX = 40;  // Left margin for y-axis labels
-    const float axisOffsetY = 20;  // Bottom margin for x-axis labels
-    const float tickSize = 5.0f;
-    const ImU32 axisColor = IM_COL32(255, 255, 255, 255); // White
-    
-    // Y-axis
-    drawList->AddLine(
-        ImVec2(plotPos.x + axisOffsetX, plotPos.y),
-        ImVec2(plotPos.x + axisOffsetX, plotPos.y + plotHeight),
-        axisColor, 1.5f
-    );
-    
-    // X-axis
-    drawList->AddLine(
-        ImVec2(plotPos.x + axisOffsetX, plotPos.y + plotHeight),
-        ImVec2(plotPos.x + plotWidth, plotPos.y + plotHeight),
-        axisColor, 1.5f
-    );
-    
-    // Draw plot title and axis labels
-    ImGui::SetCursorPos(ImVec2(width/2 - 80, 5));
-    ImGui::Text("Temperature Distribution");
-    
-    // Y-axis label
-    ImGui::SetCursorPos(ImVec2(5, plotHeight/2 - 20));
-    ImGui::Text("Temperature (K)");
-    
-    // X-axis label
-    ImGui::SetCursorPos(ImVec2(width/2 - 50, plotHeight + 25));
-    ImGui::Text("Position (m)");
-
-    // Draw ticks and labels on axes
-    // Y-axis ticks (5 ticks)
-    for (int i = 0; i <= 5; i++) {
-        float y = plotPos.y + plotHeight - (i * plotHeight / 5);
-        double tempValue = yMin + (i * (yMax - yMin) / 5);
+    // Load optimized final temperature data
+    std::ifstream finalOptFile("final_temperature_opt_slice_10.csv");
+    if (finalOptFile.is_open()) {
+        std::string line;
+        // Skip header
+        std::getline(finalOptFile, line);
         
-        // Tick
-        drawList->AddLine(
-            ImVec2(plotPos.x + axisOffsetX - tickSize, y),
-            ImVec2(plotPos.x + axisOffsetX, y),
-            axisColor
-        );
-        
-        // Label
-        char label[32];
-        snprintf(label, sizeof(label), "%.0f", tempValue);
-        drawList->AddText(
-            ImVec2(plotPos.x + axisOffsetX - 35, y - 8),
-            axisColor, label
-        );
-    }
-    
-    // X-axis ticks (5 ticks)
-    for (int i = 0; i <= 5; i++) {
-        float x = plotPos.x + axisOffsetX + (i * (plotWidth - axisOffsetX) / 5);
-        double posValue = xMin + (i * (xMax - xMin) / 5);
-        
-        // Tick
-        drawList->AddLine(
-            ImVec2(x, plotPos.y + plotHeight),
-            ImVec2(x, plotPos.y + plotHeight + tickSize),
-            axisColor
-        );
-        
-        // Label
-        char label[32];
-        snprintf(label, sizeof(label), "%.2f", posValue);
-        drawList->AddText(
-            ImVec2(x - 15, plotPos.y + plotHeight + 8),
-            axisColor, label
-        );
-    }
-    
-    // Draw the temperature graph
-    if (temps.size() >= 2) {
-        // Convert data points to screen coordinates
-        std::vector<ImVec2> points;
-        for (size_t i = 0; i < temps.size(); i++) {
-            float x = plotPos.x + axisOffsetX + ((xPos[i] - xMin) / (xMax - xMin)) * (plotWidth - axisOffsetX);
-            float y = plotPos.y + plotHeight - ((temps[i] - yMin) / (yMax - yMin)) * plotHeight;
-            points.push_back(ImVec2(x, y));
+        while (std::getline(finalOptFile, line)) {
+            std::stringstream ss(line);
+            std::string token;
+            
+            // Read position
+            std::getline(ss, token, ',');
+            finalOptData.positions.push_back(std::stod(token));
+            
+            // Read temperature
+            std::getline(ss, token, ',');
+            finalOptData.temperatures.push_back(std::stod(token));
         }
-        
-        // Draw the line connecting data points
-        const ImU32 lineColor = IM_COL32(255, 0, 0, 255); // Red
-        for (size_t i = 0; i < points.size() - 1; i++) {
-            drawList->AddLine(points[i], points[i+1], lineColor, 2.0f);
-        }
-        
-        // Draw data points
-        const ImU32 pointColor = IM_COL32(255, 255, 0, 255); // Yellow
-        for (const auto& point : points) {
-            drawList->AddCircleFilled(point, 3.0f, pointColor);
-        }
+        finalOptFile.close();
     }
-    
-    // Try to load material layer info from stack_details.csv
+
+    // Try to load material layer info from stack_details.csv for marking interfaces
     std::vector<std::pair<std::string, double>> layerBoundaries;
     std::ifstream detailsFile("stack_details.csv");
     if (detailsFile.is_open()) {
@@ -1040,79 +1002,726 @@ void drawTemperaturePlot(int x, int y, int width, int height) {
             columns.push_back(col);
         }
         
-        // Read the first row for information
-        std::string firstRow;
-        if (std::getline(detailsFile, firstRow)) {
-            std::stringstream ss(firstRow);
-            std::vector<std::string> values;
-            std::string val;
+        // Find the row for slice 10
+        std::string dataRow;
+        while (std::getline(detailsFile, dataRow)) {
+            std::stringstream ss(dataRow);
+            std::string sliceValue;
+            std::getline(ss, sliceValue, ',');
             
-            while (std::getline(ss, val, ',')) {
-                values.push_back(val);
-            }
-            
-            // Get layer thicknesses
-            double position = 0.0;
-            for (size_t i = 2; i < std::min(columns.size(), values.size()); i++) {
-                if (columns[i].find("thickness") != std::string::npos) {
-                    std::string material = columns[i].substr(0, columns[i].find("_thickness"));
-                    if (!material.empty() && values[i].find_first_not_of("0123456789.-") == std::string::npos) {
-                        double thickness = std::stod(values[i]);
-                        if (thickness > 0) {
-                            layerBoundaries.push_back({material, position});
-                            position += thickness;
-                        }
-                    }
+            if (sliceValue == "10") { // Found slice 10
+                std::stringstream dataSS(dataRow);
+                std::vector<std::string> values;
+                std::string val;
+                
+                while (std::getline(dataSS, val, ',')) {
+                    values.push_back(val);
                 }
-            }
-            
-            // Add end boundary if we found any layers
-            if (!layerBoundaries.empty()) {
-                layerBoundaries.push_back({"End", position});
+                
+                // Get layer thicknesses - Original TPS, CarbonFiber, Glue, Steel
+                if (values.size() >= 6) {
+                    double position = 0.0;
+                    double tpsThick = std::stod(values[2]);
+                    double cfThick = std::stod(values[3]);
+                    double glueThick = std::stod(values[4]);
+                    double steelThick = std::stod(values[5]);
+                    
+                    layerBoundaries.push_back({"TPS Start", position});
+                    position += tpsThick;
+                    layerBoundaries.push_back({"Carbon Fiber Start", position});
+                    position += cfThick;
+                    layerBoundaries.push_back({"Glue Start", position});
+                    position += glueThick;
+                    layerBoundaries.push_back({"Steel Start", position});
+                    position += steelThick;
+                    layerBoundaries.push_back({"End", position});
+                }
+                
+                break; // Found what we needed
             }
         }
         detailsFile.close();
     }
+
+    // ---- FIRST PLOT: TIME HISTORY (ORIGINAL) ----
+    ImVec2 plot1Pos = ImGui::GetCursorScreenPos();
     
-    // Draw material region markers if we have layer data
-    if (!layerBoundaries.empty()) {
-        for (size_t i = 0; i < layerBoundaries.size(); i++) {
-            const auto& [material, position] = layerBoundaries[i];
+    // Title
+    ImGui::Text("Time History (Original) - Slice 10");
+    ImGui::SameLine();
+    ImGui::SetCursorPosX(width/2 + 20);
+    ImGui::Text("Time History (Optimized) - Slice 10");
+    
+    ImGui::SetCursorPos(ImVec2(10, ImGui::GetCursorPosY() + 5));
+
+    // Draw plot area background
+    drawList->AddRectFilled(
+        ImVec2(plot1Pos.x + axisOffsetX, plot1Pos.y + 25),
+        ImVec2(plot1Pos.x + plotWidth, plot1Pos.y + 25 + plotHeight - axisOffsetY),
+        IM_COL32(30, 30, 30, 255)
+    );
+    
+    // Plot 1: Original Time History
+    bool haveOrigTimeData = !origData.time.empty();
+    
+    if (!haveOrigTimeData) {
+        ImGui::SetCursorPos(ImVec2(plot1Pos.x - ImGui::GetWindowPos().x + 50, 
+                                 plot1Pos.y - ImGui::GetWindowPos().y + plotHeight/2));
+        ImGui::Text("No original time history data available for slice 10.");
+    } else {
+        // Calculate plot ranges for time history (original)
+        double timeMinOrig = *std::min_element(origData.time.begin(), origData.time.end());
+        double timeMaxOrig = *std::max_element(origData.time.begin(), origData.time.end());
+        
+        double tempMinOrig = std::min({
+            *std::min_element(origData.carbonGlueTemp.begin(), origData.carbonGlueTemp.end()),
+            *std::min_element(origData.glueSteelTemp.begin(), origData.glueSteelTemp.end()),
+            *std::min_element(origData.steelTemp.begin(), origData.steelTemp.end())
+        });
+        
+        double tempMaxOrig = std::max({
+            *std::max_element(origData.carbonGlueTemp.begin(), origData.carbonGlueTemp.end()),
+            *std::max_element(origData.glueSteelTemp.begin(), origData.glueSteelTemp.end()),
+            *std::max_element(origData.steelTemp.begin(), origData.steelTemp.end())
+        });
+        
+        // Add some margin to the y-range
+        double tempMarginOrig = (tempMaxOrig - tempMinOrig) * 0.05;
+        if (tempMarginOrig < 1.0) tempMarginOrig = 1.0;
+        tempMinOrig -= tempMarginOrig;
+        tempMaxOrig += tempMarginOrig;
+        
+        // Draw axes for original time history plot
+        // Y-axis
+        drawList->AddLine(
+            ImVec2(plot1Pos.x + axisOffsetX, plot1Pos.y + 25),
+            ImVec2(plot1Pos.x + axisOffsetX, plot1Pos.y + 25 + plotHeight - axisOffsetY),
+            axisColor, 1.5f
+        );
+        
+        // X-axis
+        drawList->AddLine(
+            ImVec2(plot1Pos.x + axisOffsetX, plot1Pos.y + 25 + plotHeight - axisOffsetY),
+            ImVec2(plot1Pos.x + plotWidth, plot1Pos.y + 25 + plotHeight - axisOffsetY),
+            axisColor, 1.5f
+        );
+        
+        // Draw axis labels
+        ImGui::SetCursorPos(ImVec2(10, 60));
+        ImGui::Text("Temp (K)");
+        
+        ImGui::SetCursorPos(ImVec2(plotWidth/2 - 30, plotHeight + 10));
+        ImGui::Text("Time (s)");
+
+        // Draw ticks and labels on axes
+        // Y-axis ticks (5 ticks)
+        for (int i = 0; i <= 5; i++) {
+            float y = plot1Pos.y + 25 + (plotHeight - axisOffsetY) - (i * (plotHeight - axisOffsetY) / 5);
+            double tempValue = tempMinOrig + (i * (tempMaxOrig - tempMinOrig) / 5);
             
-            // Only draw if within the viewable range
-            if (position >= xMin && position <= xMax) {
-                // Calculate screen x-coordinate for this position
-                float screenX = plotPos.x + axisOffsetX + 
-                    ((position - xMin) / (xMax - xMin)) * (plotWidth - axisOffsetX);
-                
-                // Draw vertical line at layer boundary
-                ImU32 boundaryColor = IM_COL32(200, 200, 200, 128); // Light gray, semi-transparent
-                drawList->AddLine(
-                    ImVec2(screenX, plotPos.y),
-                    ImVec2(screenX, plotPos.y + plotHeight),
-                    boundaryColor
-                );
-                
-                // Add layer name if not the end boundary
-                if (i < layerBoundaries.size() - 1) {
-                    float nextPos = layerBoundaries[i+1].second;
-                    float midPoint = (position + nextPos) / 2.0f;
+            // Tick
+            drawList->AddLine(
+                ImVec2(plot1Pos.x + axisOffsetX - tickSize, y),
+                ImVec2(plot1Pos.x + axisOffsetX, y),
+                axisColor
+            );
+            
+            // Label
+            char label[32];
+            snprintf(label, sizeof(label), "%.0f", tempValue);
+            drawList->AddText(
+                ImVec2(plot1Pos.x + axisOffsetX - 40, y - 8),
+                axisColor, label
+            );
+        }
+        
+        // X-axis ticks (5 ticks)
+        for (int i = 0; i <= 5; i++) {
+            float x = plot1Pos.x + axisOffsetX + (i * (plotWidth - axisOffsetX) / 5);
+            double timeValue = timeMinOrig + (i * (timeMaxOrig - timeMinOrig) / 5);
+            
+            // Tick
+            drawList->AddLine(
+                ImVec2(x, plot1Pos.y + 25 + plotHeight - axisOffsetY),
+                ImVec2(x, plot1Pos.y + 25 + plotHeight - axisOffsetY + tickSize),
+                axisColor
+            );
+            
+            // Label
+            char label[32];
+            snprintf(label, sizeof(label), "%.1f", timeValue);
+            drawList->AddText(
+                ImVec2(x - 15, plot1Pos.y + 25 + plotHeight - axisOffsetY + 8),
+                axisColor, label
+            );
+        }
+
+        // Define colors for different temperature lines
+        const ImU32 colorsOrig[] = {
+            IM_COL32(255, 0, 0, 255),     // Red - carbon-glue
+            IM_COL32(0, 255, 0, 255),     // Green - glue-steel
+            IM_COL32(0, 0, 255, 255)      // Blue - steel
+        };
+
+        // Draw the legend for original time history plot
+        const float legendX = plot1Pos.x + plotWidth - 150;
+        const float legendY = plot1Pos.y + 35;
+        const float legendLineLength = 20.0f;
+        const float legendSpacing = 20.0f;
+        
+        drawList->AddLine(
+            ImVec2(legendX, legendY), 
+            ImVec2(legendX + legendLineLength, legendY), 
+            colorsOrig[0], 2.0f);
+        drawList->AddText(
+            ImVec2(legendX + legendLineLength + 5, legendY - 8),
+            axisColor, "Carbon-Glue");
+            
+        drawList->AddLine(
+            ImVec2(legendX, legendY + legendSpacing), 
+            ImVec2(legendX + legendLineLength, legendY + legendSpacing), 
+            colorsOrig[1], 2.0f);
+        drawList->AddText(
+            ImVec2(legendX + legendLineLength + 5, legendY + legendSpacing - 8),
+            axisColor, "Glue-Steel");
+            
+        drawList->AddLine(
+            ImVec2(legendX, legendY + 2*legendSpacing), 
+            ImVec2(legendX + legendLineLength, legendY + 2*legendSpacing), 
+            colorsOrig[2], 2.0f);
+        drawList->AddText(
+            ImVec2(legendX + legendLineLength + 5, legendY + 2*legendSpacing - 8),
+            axisColor, "Steel");
+        
+        // Draw original carbon-glue line
+        std::vector<ImVec2> carbonGluePoints;
+        for (size_t i = 0; i < origData.time.size(); i++) {
+            float x = plot1Pos.x + axisOffsetX + ((origData.time[i] - timeMinOrig) / (timeMaxOrig - timeMinOrig)) * 
+                    (plotWidth - axisOffsetX);
+            float y = plot1Pos.y + 25 + (plotHeight - axisOffsetY) - 
+                    ((origData.carbonGlueTemp[i] - tempMinOrig) / (tempMaxOrig - tempMinOrig)) * 
+                    (plotHeight - axisOffsetY);
+            carbonGluePoints.push_back(ImVec2(x, y));
+        }
+        
+        for (size_t i = 0; i < carbonGluePoints.size() - 1; i++) {
+            drawList->AddLine(carbonGluePoints[i], carbonGluePoints[i+1], colorsOrig[0], 2.0f);
+        }
+        
+        // Draw original glue-steel line
+        std::vector<ImVec2> glueSteelPoints;
+        for (size_t i = 0; i < origData.time.size(); i++) {
+            float x = plot1Pos.x + axisOffsetX + ((origData.time[i] - timeMinOrig) / (timeMaxOrig - timeMinOrig)) * 
+                    (plotWidth - axisOffsetX);
+            float y = plot1Pos.y + 25 + (plotHeight - axisOffsetY) - 
+                    ((origData.glueSteelTemp[i] - tempMinOrig) / (tempMaxOrig - tempMinOrig)) * 
+                    (plotHeight - axisOffsetY);
+            glueSteelPoints.push_back(ImVec2(x, y));
+        }
+        
+        for (size_t i = 0; i < glueSteelPoints.size() - 1; i++) {
+            drawList->AddLine(glueSteelPoints[i], glueSteelPoints[i+1], colorsOrig[1], 2.0f);
+        }
+        
+        // Draw original steel line
+        std::vector<ImVec2> steelPoints;
+        for (size_t i = 0; i < origData.time.size(); i++) {
+            float x = plot1Pos.x + axisOffsetX + ((origData.time[i] - timeMinOrig) / (timeMaxOrig - timeMinOrig)) * 
+                    (plotWidth - axisOffsetX);
+            float y = plot1Pos.y + 25 + (plotHeight - axisOffsetY) - 
+                    ((origData.steelTemp[i] - tempMinOrig) / (tempMaxOrig - tempMinOrig)) * 
+                    (plotHeight - axisOffsetY);
+            steelPoints.push_back(ImVec2(x, y));
+        }
+        
+        for (size_t i = 0; i < steelPoints.size() - 1; i++) {
+            drawList->AddLine(steelPoints[i], steelPoints[i+1], colorsOrig[2], 2.0f);
+        }
+    }
+
+    // ---- SECOND PLOT: TIME HISTORY (OPTIMIZED) ----
+    ImVec2 plot2Pos = ImVec2(plot1Pos.x + plotWidth + horizontalSpacing, plot1Pos.y);
+    
+    // Draw plot area background
+    drawList->AddRectFilled(
+        ImVec2(plot2Pos.x + axisOffsetX, plot2Pos.y + 25),
+        ImVec2(plot2Pos.x + plotWidth, plot2Pos.y + 25 + plotHeight - axisOffsetY),
+        IM_COL32(30, 30, 30, 255)
+    );
+    
+    // Plot 2: Optimized Time History
+    bool haveOptTimeData = !optData.time.empty();
+    
+    if (!haveOptTimeData) {
+        ImGui::SetCursorPos(ImVec2(plot2Pos.x - ImGui::GetWindowPos().x + 50, 
+                                 plot2Pos.y - ImGui::GetWindowPos().y + plotHeight/2));
+        ImGui::Text("No optimized time history data available for slice 10.");
+    } else {
+        // Calculate plot ranges for time history (optimized)
+        double timeMinOpt = *std::min_element(optData.time.begin(), optData.time.end());
+        double timeMaxOpt = *std::max_element(optData.time.begin(), optData.time.end());
+        
+        double tempMinOpt = std::min({
+            *std::min_element(optData.carbonGlueTemp.begin(), optData.carbonGlueTemp.end()),
+            *std::min_element(optData.glueSteelTemp.begin(), optData.glueSteelTemp.end()),
+            *std::min_element(optData.steelTemp.begin(), optData.steelTemp.end())
+        });
+        
+        double tempMaxOpt = std::max({
+            *std::max_element(optData.carbonGlueTemp.begin(), optData.carbonGlueTemp.end()),
+            *std::max_element(optData.glueSteelTemp.begin(), optData.glueSteelTemp.end()),
+            *std::max_element(optData.steelTemp.begin(), optData.steelTemp.end())
+        });
+        
+        // Add some margin to the y-range
+        double tempMarginOpt = (tempMaxOpt - tempMinOpt) * 0.05;
+        if (tempMarginOpt < 1.0) tempMarginOpt = 1.0;
+        tempMinOpt -= tempMarginOpt;
+        tempMaxOpt += tempMarginOpt;
+
+        // Draw axes for optimized time history plot
+        // Y-axis
+        drawList->AddLine(
+            ImVec2(plot2Pos.x + axisOffsetX, plot2Pos.y + 25),
+            ImVec2(plot2Pos.x + axisOffsetX, plot2Pos.y + 25 + plotHeight - axisOffsetY),
+            axisColor, 1.5f
+        );
+        
+        // X-axis
+        drawList->AddLine(
+            ImVec2(plot2Pos.x + axisOffsetX, plot2Pos.y + 25 + plotHeight - axisOffsetY),
+            ImVec2(plot2Pos.x + plotWidth, plot2Pos.y + 25 + plotHeight - axisOffsetY),
+            axisColor, 1.5f
+        );
+        
+        // Draw axis labels
+        ImGui::SetCursorPos(ImVec2(width/2 + 10, 60));
+        ImGui::Text("Temp (K)");
+        
+        ImGui::SetCursorPos(ImVec2(width/2 + plotWidth/2 - 30, plotHeight + 10));
+        ImGui::Text("Time (s)");
+
+        // Draw ticks and labels on axes
+        // Y-axis ticks (5 ticks)
+        for (int i = 0; i <= 5; i++) {
+            float y = plot2Pos.y + 25 + (plotHeight - axisOffsetY) - (i * (plotHeight - axisOffsetY) / 5);
+            double tempValue = tempMinOpt + (i * (tempMaxOpt - tempMinOpt) / 5);
+            
+            // Tick
+            drawList->AddLine(
+                ImVec2(plot2Pos.x + axisOffsetX - tickSize, y),
+                ImVec2(plot2Pos.x + axisOffsetX, y),
+                axisColor
+            );
+            
+            // Label
+            char label[32];
+            snprintf(label, sizeof(label), "%.0f", tempValue);
+            drawList->AddText(
+                ImVec2(plot2Pos.x + axisOffsetX - 40, y - 8),
+                axisColor, label
+            );
+        }
+        
+        // X-axis ticks (5 ticks)
+        for (int i = 0; i <= 5; i++) {
+            float x = plot2Pos.x + axisOffsetX + (i * (plotWidth - axisOffsetX) / 5);
+            double timeValue = timeMinOpt + (i * (timeMaxOpt - timeMinOpt) / 5);
+            
+            // Tick
+            drawList->AddLine(
+                ImVec2(x, plot2Pos.y + 25 + plotHeight - axisOffsetY),
+                ImVec2(x, plot2Pos.y + 25 + plotHeight - axisOffsetY + tickSize),
+                axisColor
+            );
+            
+            // Label
+            char label[32];
+            snprintf(label, sizeof(label), "%.1f", timeValue);
+            drawList->AddText(
+                ImVec2(x - 15, plot2Pos.y + 25 + plotHeight - axisOffsetY + 8),
+                axisColor, label
+            );
+        }
+
+        // Define colors for optimized temperature lines (same as original but brighter)
+        const ImU32 colorsOpt[] = {
+            IM_COL32(255, 80, 80, 255),   // Light red - carbon-glue
+            IM_COL32(80, 255, 80, 255),   // Light green - glue-steel
+            IM_COL32(80, 80, 255, 255)    // Light blue - steel
+        };
+
+        // Draw the legend for optimized time history plot
+        const float legendX = plot2Pos.x + plotWidth - 150;
+        const float legendY = plot2Pos.y + 35;
+        const float legendLineLength = 20.0f;
+        const float legendSpacing = 20.0f;
+        
+        drawList->AddLine(
+            ImVec2(legendX, legendY), 
+            ImVec2(legendX + legendLineLength, legendY), 
+            colorsOpt[0], 2.0f);
+        drawList->AddText(
+            ImVec2(legendX + legendLineLength + 5, legendY - 8),
+            axisColor, "Carbon-Glue");
+            
+        drawList->AddLine(
+            ImVec2(legendX, legendY + legendSpacing), 
+            ImVec2(legendX + legendLineLength, legendY + legendSpacing), 
+            colorsOpt[1], 2.0f);
+        drawList->AddText(
+            ImVec2(legendX + legendLineLength + 5, legendY + legendSpacing - 8),
+            axisColor, "Glue-Steel");
+            
+        drawList->AddLine(
+            ImVec2(legendX, legendY + 2*legendSpacing), 
+            ImVec2(legendX + legendLineLength, legendY + 2*legendSpacing), 
+            colorsOpt[2], 2.0f);
+        drawList->AddText(
+            ImVec2(legendX + legendLineLength + 5, legendY + 2*legendSpacing - 8),
+            axisColor, "Steel");
+
+        // Draw optimized carbon-glue line
+        std::vector<ImVec2> carbonGluePoints;
+        for (size_t i = 0; i < optData.time.size(); i++) {
+            float x = plot2Pos.x + axisOffsetX + ((optData.time[i] - timeMinOpt) / (timeMaxOpt - timeMinOpt)) * 
+                    (plotWidth - axisOffsetX);
+            float y = plot2Pos.y + 25 + (plotHeight - axisOffsetY) - 
+                    ((optData.carbonGlueTemp[i] - tempMinOpt) / (tempMaxOpt - tempMinOpt)) * 
+                    (plotHeight - axisOffsetY);
+            carbonGluePoints.push_back(ImVec2(x, y));
+        }
+        
+        for (size_t i = 0; i < carbonGluePoints.size() - 1; i++) {
+            drawList->AddLine(carbonGluePoints[i], carbonGluePoints[i+1], colorsOpt[0], 2.0f);
+        }
+        
+        // Draw optimized glue-steel line
+        std::vector<ImVec2> glueSteelPoints;
+        for (size_t i = 0; i < optData.time.size(); i++) {
+            float x = plot2Pos.x + axisOffsetX + ((optData.time[i] - timeMinOpt) / (timeMaxOpt - timeMinOpt)) * 
+                    (plotWidth - axisOffsetX);
+            float y = plot2Pos.y + 25 + (plotHeight - axisOffsetY) - 
+                    ((optData.glueSteelTemp[i] - tempMinOpt) / (tempMaxOpt - tempMinOpt)) * 
+                    (plotHeight - axisOffsetY);
+            glueSteelPoints.push_back(ImVec2(x, y));
+        }
+        
+        for (size_t i = 0; i < glueSteelPoints.size() - 1; i++) {
+            drawList->AddLine(glueSteelPoints[i], glueSteelPoints[i+1], colorsOpt[1], 2.0f);
+        }
+        
+        // Draw optimized steel line
+        std::vector<ImVec2> steelPoints;
+        for (size_t i = 0; i < optData.time.size(); i++) {
+            float x = plot2Pos.x + axisOffsetX + ((optData.time[i] - timeMinOpt) / (timeMaxOpt - timeMinOpt)) * 
+                    (plotWidth - axisOffsetX);
+            float y = plot2Pos.y + 25 + (plotHeight - axisOffsetY) - 
+                    ((optData.steelTemp[i] - tempMinOpt) / (tempMaxOpt - tempMinOpt)) * 
+                    (plotHeight - axisOffsetY);
+            steelPoints.push_back(ImVec2(x, y));
+        }
+        
+        for (size_t i = 0; i < steelPoints.size() - 1; i++) {
+            drawList->AddLine(steelPoints[i], steelPoints[i+1], colorsOpt[2], 2.0f);
+        }
+    }
+
+    // Move cursor down for next row of plots
+    ImGui::SetCursorPosY(plotHeight + 50);
+
+    // ---- THIRD PLOT: FINAL TEMPERATURE (ORIGINAL) ----
+    ImVec2 plot3Pos = ImVec2(plot1Pos.x, plot1Pos.y + plotHeight + verticalSpacing);
+    
+    // Titles for bottom row
+    ImGui::Text("Final Temperature (Original) - Slice 10");
+    ImGui::SameLine();
+    ImGui::SetCursorPosX(width/2 + 20);
+    ImGui::Text("Final Temperature (Optimized) - Slice 10");
+    
+    ImGui::SetCursorPos(ImVec2(10, ImGui::GetCursorPosY() + 5));
+    
+    // Draw plot area background
+    drawList->AddRectFilled(
+        ImVec2(plot3Pos.x + axisOffsetX, plot3Pos.y + 25),
+        ImVec2(plot3Pos.x + plotWidth, plot3Pos.y + 25 + plotHeight - axisOffsetY),
+        IM_COL32(30, 30, 30, 255)
+    );
+    
+    // Plot 3: Original Final Temperature
+    bool haveOrigFinalData = !finalOrigData.positions.empty();
+    
+    if (!haveOrigFinalData) {
+        ImGui::SetCursorPos(ImVec2(plot3Pos.x - ImGui::GetWindowPos().x + 50, 
+                                 plot3Pos.y - ImGui::GetWindowPos().y + plotHeight/2));
+        ImGui::Text("No original final temperature data available for slice 10.");
+    } else {
+        // Calculate plot ranges for final temperature (original)
+        double posMinOrig = *std::min_element(finalOrigData.positions.begin(), finalOrigData.positions.end());
+        double posMaxOrig = *std::max_element(finalOrigData.positions.begin(), finalOrigData.positions.end());
+        
+        double finalTempMinOrig = *std::min_element(finalOrigData.temperatures.begin(), finalOrigData.temperatures.end());
+        double finalTempMaxOrig = *std::max_element(finalOrigData.temperatures.begin(), finalOrigData.temperatures.end());
+        
+        // Add some margin to the y-range
+        double tempMarginOrig = (finalTempMaxOrig - finalTempMinOrig) * 0.05;
+        if (tempMarginOrig < 1.0) tempMarginOrig = 1.0;
+        finalTempMinOrig -= tempMarginOrig;
+        finalTempMaxOrig += tempMarginOrig;
+
+        // Draw axes for original final temperature plot
+        // Y-axis
+        drawList->AddLine(
+            ImVec2(plot3Pos.x + axisOffsetX, plot3Pos.y + 25),
+            ImVec2(plot3Pos.x + axisOffsetX, plot3Pos.y + 25 + plotHeight - axisOffsetY),
+            axisColor, 1.5f
+        );
+        
+        // X-axis
+        drawList->AddLine(
+            ImVec2(plot3Pos.x + axisOffsetX, plot3Pos.y + 25 + plotHeight - axisOffsetY),
+            ImVec2(plot3Pos.x + plotWidth, plot3Pos.y + 25 + plotHeight - axisOffsetY),
+            axisColor, 1.5f
+        );
+        
+        // Draw axis labels
+        ImGui::SetCursorPos(ImVec2(10, plotHeight + 60));
+        ImGui::Text("Temp (K)");
+        
+        ImGui::SetCursorPos(ImVec2(plotWidth/2 - 40, height - 30));
+        ImGui::Text("Position (m)");
+
+        // Draw ticks and labels on axes
+        // Y-axis ticks (5 ticks)
+        for (int i = 0; i <= 5; i++) {
+            float y = plot3Pos.y + 25 + (plotHeight - axisOffsetY) - (i * (plotHeight - axisOffsetY) / 5);
+            double tempValue = finalTempMinOrig + (i * (finalTempMaxOrig - finalTempMinOrig) / 5);
+            
+            // Tick
+            drawList->AddLine(
+                ImVec2(plot3Pos.x + axisOffsetX - tickSize, y),
+                ImVec2(plot3Pos.x + axisOffsetX, y),
+                axisColor
+            );
+            
+            // Label
+            char label[32];
+            snprintf(label, sizeof(label), "%.0f", tempValue);
+            drawList->AddText(
+                ImVec2(plot3Pos.x + axisOffsetX - 40, y - 8),
+                axisColor, label
+            );
+        }
+        
+        // X-axis ticks (5 ticks)
+        for (int i = 0; i <= 5; i++) {
+            float x = plot3Pos.x + axisOffsetX + (i * (plotWidth - axisOffsetX) / 5);
+            double posValue = posMinOrig + (i * (posMaxOrig - posMinOrig) / 5);
+            
+            // Tick
+            drawList->AddLine(
+                ImVec2(x, plot3Pos.y + 25 + plotHeight - axisOffsetY),
+                ImVec2(x, plot3Pos.y + 25 + plotHeight - axisOffsetY + tickSize),
+                axisColor
+            );
+            
+            // Label
+            char label[32];
+            snprintf(label, sizeof(label), "%.3f", posValue);
+            drawList->AddText(
+                ImVec2(x - 15, plot3Pos.y + 25 + plotHeight - axisOffsetY + 8),
+                axisColor, label
+            );
+        }
+
+        // Define color for original final temperature line
+        const ImU32 finalTempColorOrig = IM_COL32(255, 100, 0, 255); // Orange
+
+        // Draw original final temperature line
+        std::vector<ImVec2> points;
+        for (size_t i = 0; i < finalOrigData.positions.size(); i++) {
+            float x = plot3Pos.x + axisOffsetX + ((finalOrigData.positions[i] - posMinOrig) / (posMaxOrig - posMinOrig)) * 
+                    (plotWidth - axisOffsetX);
+            float y = plot3Pos.y + 25 + (plotHeight - axisOffsetY) - 
+                    ((finalOrigData.temperatures[i] - finalTempMinOrig) / (finalTempMaxOrig - finalTempMinOrig)) * 
+                    (plotHeight - axisOffsetY);
+            points.push_back(ImVec2(x, y));
+        }
+        
+        for (size_t i = 0; i < points.size() - 1; i++) {
+            drawList->AddLine(points[i], points[i+1], finalTempColorOrig, 2.0f);
+        }
+        
+        // Draw material layer boundaries on original plot
+        if (!layerBoundaries.empty()) {
+            for (const auto& [name, position] : layerBoundaries) {
+                // Only draw if within the viewable range
+                if (position >= posMinOrig && position <= posMaxOrig) {
+                    // Calculate screen x-coordinate for this position
+                    float screenX = plot3Pos.x + axisOffsetX + 
+                        ((position - posMinOrig) / (posMaxOrig - posMinOrig)) * (plotWidth - axisOffsetX);
                     
-                    // Calculate x for middle of region
-                    float textX = plotPos.x + axisOffsetX + 
-                        ((midPoint - xMin) / (xMax - xMin)) * (plotWidth - axisOffsetX);
+                    // Draw vertical line at layer boundary
+                    ImU32 boundaryColor = IM_COL32(200, 200, 200, 128); // Light gray, semi-transparent
+                    drawList->AddLine(
+                        ImVec2(screenX, plot3Pos.y + 25),
+                        ImVec2(screenX, plot3Pos.y + 25 + plotHeight - axisOffsetY),
+                        boundaryColor
+                    );
                     
-                    // Position text at bottom of plot
+                    // Add layer name (keep it compact)
                     drawList->AddText(
-                        ImVec2(textX - 20, plotPos.y + plotHeight - 15),
+                        ImVec2(screenX - 20, plot3Pos.y + 35),
                         IM_COL32(200, 200, 200, 180),
-                        material.c_str()
+                        name.c_str()
                     );
                 }
             }
         }
     }
+
+    // ---- FOURTH PLOT: FINAL TEMPERATURE (OPTIMIZED) ----
+    ImVec2 plot4Pos = ImVec2(plot3Pos.x + plotWidth + horizontalSpacing, plot3Pos.y);
     
+    // Draw plot area background
+    drawList->AddRectFilled(
+        ImVec2(plot4Pos.x + axisOffsetX, plot4Pos.y + 25),
+        ImVec2(plot4Pos.x + plotWidth, plot4Pos.y + 25 + plotHeight - axisOffsetY),
+        IM_COL32(30, 30, 30, 255)
+    );
+    
+    // Plot 4: Optimized Final Temperature
+    bool haveOptFinalData = !finalOptData.positions.empty();
+    
+    if (!haveOptFinalData) {
+        ImGui::SetCursorPos(ImVec2(plot4Pos.x - ImGui::GetWindowPos().x + 50, 
+                                 plot4Pos.y - ImGui::GetWindowPos().y + plotHeight/2));
+        ImGui::Text("No optimized final temperature data available for slice 10.");
+    } else {
+        // Calculate plot ranges for final temperature (optimized)
+        double posMinOpt = *std::min_element(finalOptData.positions.begin(), finalOptData.positions.end());
+        double posMaxOpt = *std::max_element(finalOptData.positions.begin(), finalOptData.positions.end());
+        
+        double finalTempMinOpt = *std::min_element(finalOptData.temperatures.begin(), finalOptData.temperatures.end());
+        double finalTempMaxOpt = *std::max_element(finalOptData.temperatures.begin(), finalOptData.temperatures.end());
+        
+        // Add some margin to the y-range
+        double tempMarginOpt = (finalTempMaxOpt - finalTempMinOpt) * 0.05;
+        if (tempMarginOpt < 1.0) tempMarginOpt = 1.0;
+        finalTempMinOpt -= tempMarginOpt;
+        finalTempMaxOpt += tempMarginOpt;
+
+        // Draw axes for optimized final temperature plot
+        // Y-axis
+        drawList->AddLine(
+            ImVec2(plot4Pos.x + axisOffsetX, plot4Pos.y + 25),
+            ImVec2(plot4Pos.x + axisOffsetX, plot4Pos.y + 25 + plotHeight - axisOffsetY),
+            axisColor, 1.5f
+        );
+        
+        // X-axis
+        drawList->AddLine(
+            ImVec2(plot4Pos.x + axisOffsetX, plot4Pos.y + 25 + plotHeight - axisOffsetY),
+            ImVec2(plot4Pos.x + plotWidth, plot4Pos.y + 25 + plotHeight - axisOffsetY),
+            axisColor, 1.5f
+        );
+        
+        // Draw axis labels
+        ImGui::SetCursorPos(ImVec2(width/2 + 10, plotHeight + 60));
+        ImGui::Text("Temp (K)");
+        
+        ImGui::SetCursorPos(ImVec2(width/2 + plotWidth/2 - 40, height - 30));
+        ImGui::Text("Position (m)");
+
+        // Draw ticks and labels on axes
+        // Y-axis ticks (5 ticks)
+        for (int i = 0; i <= 5; i++) {
+            float y = plot4Pos.y + 25 + (plotHeight - axisOffsetY) - (i * (plotHeight - axisOffsetY) / 5);
+            double tempValue = finalTempMinOpt + (i * (finalTempMaxOpt - finalTempMinOpt) / 5);
+            
+            // Tick
+            drawList->AddLine(
+                ImVec2(plot4Pos.x + axisOffsetX - tickSize, y),
+                ImVec2(plot4Pos.x + axisOffsetX, y),
+                axisColor
+            );
+            
+            // Label
+            char label[32];
+            snprintf(label, sizeof(label), "%.0f", tempValue);
+            drawList->AddText(
+                ImVec2(plot4Pos.x + axisOffsetX - 40, y - 8),
+                axisColor, label
+            );
+        }
+        
+        // X-axis ticks (5 ticks)
+        for (int i = 0; i <= 5; i++) {
+            float x = plot4Pos.x + axisOffsetX + (i * (plotWidth - axisOffsetX) / 5);
+            double posValue = posMinOpt + (i * (posMaxOpt - posMinOpt) / 5);
+            
+            // Tick
+            drawList->AddLine(
+                ImVec2(x, plot4Pos.y + 25 + plotHeight - axisOffsetY),
+                ImVec2(x, plot4Pos.y + 25 + plotHeight - axisOffsetY + tickSize),
+                axisColor
+            );
+            
+            // Label
+            char label[32];
+            snprintf(label, sizeof(label), "%.3f", posValue);
+            drawList->AddText(
+                ImVec2(x - 15, plot4Pos.y + 25 + plotHeight - axisOffsetY + 8),
+                axisColor, label
+            );
+        }
+
+        // Define color for optimized final temperature line
+        const ImU32 finalTempColorOpt = IM_COL32(0, 200, 255, 255); // Cyan
+
+        // Draw optimized final temperature line
+        std::vector<ImVec2> points;
+        for (size_t i = 0; i < finalOptData.positions.size(); i++) {
+            float x = plot4Pos.x + axisOffsetX + ((finalOptData.positions[i] - posMinOpt) / (posMaxOpt - posMinOpt)) * 
+                    (plotWidth - axisOffsetX);
+            float y = plot4Pos.y + 25 + (plotHeight - axisOffsetY) - 
+                    ((finalOptData.temperatures[i] - finalTempMinOpt) / (finalTempMaxOpt - finalTempMinOpt)) * 
+                    (plotHeight - axisOffsetY);
+            points.push_back(ImVec2(x, y));
+        }
+        
+        for (size_t i = 0; i < points.size() - 1; i++) {
+            drawList->AddLine(points[i], points[i+1], finalTempColorOpt, 2.0f);
+        }
+        
+        // Draw material layer boundaries on optimized plot
+        if (!layerBoundaries.empty()) {
+            for (const auto& [name, position] : layerBoundaries) {
+                // Only draw if within the viewable range
+                if (position >= posMinOpt && position <= posMaxOpt) {
+                    // Calculate screen x-coordinate for this position
+                    float screenX = plot4Pos.x + axisOffsetX + 
+                        ((position - posMinOpt) / (posMaxOpt - posMinOpt)) * (plotWidth - axisOffsetX);
+                    
+                    // Draw vertical line at layer boundary
+                    ImU32 boundaryColor = IM_COL32(200, 200, 200, 128); // Light gray, semi-transparent
+                    drawList->AddLine(
+                        ImVec2(screenX, plot4Pos.y + 25),
+                        ImVec2(screenX, plot4Pos.y + 25 + plotHeight - axisOffsetY),
+                        boundaryColor
+                    );
+                    
+                    // Add layer name (keep it compact)
+                    drawList->AddText(
+                        ImVec2(screenX - 20, plot4Pos.y + 35),
+                        IM_COL32(200, 200, 200, 180),
+                        name.c_str()
+                    );
+                }
+            }
+        }
+    }
+
     ImGui::End();
 }
 
