@@ -71,6 +71,7 @@ static bool useAdaptiveTimeStep = false;
 static float theta = 0.5f;
 static char outputFile[512] = "summary_output.csv";
 static bool meshLoadedForVis = false; // Track if mesh is loaded for visualization
+static int selectedSlice = 10; // Currently selected slice number for plots (1-based)
 
 // 🌟 Mesh Handler and Solver Objects (keep them persistent)
 MeshHandler meshHandler;
@@ -876,7 +877,7 @@ void drawTemperaturePlot(int x, int y, int width, int height) {
     TimeHistoryData origData, optData;
 
     // Load original time history data
-    std::ifstream origHistFile("time_history_orig_slice_10.csv");
+    std::ifstream origHistFile("time_history_orig_slice_" + std::to_string(selectedSlice) + ".csv");
     if (origHistFile.is_open()) {
         std::string line;
         // Skip header
@@ -906,7 +907,7 @@ void drawTemperaturePlot(int x, int y, int width, int height) {
     }
 
     // Load optimized time history data
-    std::ifstream optHistFile("time_history_opt_slice_10.csv");
+    std::ifstream optHistFile("time_history_opt_slice_" + std::to_string(selectedSlice) + ".csv");
     if (optHistFile.is_open()) {
         std::string line;
         // Skip header
@@ -944,7 +945,7 @@ void drawTemperaturePlot(int x, int y, int width, int height) {
     FinalTempData finalOrigData, finalOptData;
 
     // Load original final temperature data
-    std::ifstream finalOrigFile("final_temperature_orig_slice_10.csv");
+    std::ifstream finalOrigFile("final_temperature_orig_slice_" + std::to_string(selectedSlice) + ".csv");
     if (finalOrigFile.is_open()) {
         std::string line;
         // Skip header
@@ -966,7 +967,7 @@ void drawTemperaturePlot(int x, int y, int width, int height) {
     }
 
     // Load optimized final temperature data
-    std::ifstream finalOptFile("final_temperature_opt_slice_10.csv");
+    std::ifstream finalOptFile("final_temperature_opt_slice_" + std::to_string(selectedSlice) + ".csv");
     if (finalOptFile.is_open()) {
         std::string line;
         // Skip header
@@ -1002,14 +1003,14 @@ void drawTemperaturePlot(int x, int y, int width, int height) {
             columns.push_back(col);
         }
         
-        // Find the row for slice 10
+        // Find the row for selected slice
         std::string dataRow;
         while (std::getline(detailsFile, dataRow)) {
             std::stringstream ss(dataRow);
             std::string sliceValue;
             std::getline(ss, sliceValue, ',');
             
-            if (sliceValue == "10") { // Found slice 10
+            if (sliceValue == std::to_string(selectedSlice)) { // Found selected slice
                 std::stringstream dataSS(dataRow);
                 std::vector<std::string> values;
                 std::string val;
@@ -1047,10 +1048,10 @@ void drawTemperaturePlot(int x, int y, int width, int height) {
     ImVec2 plot1Pos = ImGui::GetCursorScreenPos();
     
     // Title
-    ImGui::Text("Time History (Original) - Slice 10");
+    ImGui::Text("Time History (Original) - Slice %d", selectedSlice);
     ImGui::SameLine();
     ImGui::SetCursorPosX(width/2 + 20);
-    ImGui::Text("Time History (Optimized) - Slice 10");
+    ImGui::Text("Time History (Optimized) - Slice %d", selectedSlice);
     
     ImGui::SetCursorPos(ImVec2(10, ImGui::GetCursorPosY() + 5));
 
@@ -1067,7 +1068,7 @@ void drawTemperaturePlot(int x, int y, int width, int height) {
     if (!haveOrigTimeData) {
         ImGui::SetCursorPos(ImVec2(plot1Pos.x - ImGui::GetWindowPos().x + 50, 
                                  plot1Pos.y - ImGui::GetWindowPos().y + plotHeight/2));
-        ImGui::Text("No original time history data available for slice 10.");
+        ImGui::Text("No original time history data available for slice %d.", selectedSlice);
     } else {
         // Calculate plot ranges for time history (original)
         double timeMinOrig = *std::min_element(origData.time.begin(), origData.time.end());
@@ -1255,7 +1256,7 @@ void drawTemperaturePlot(int x, int y, int width, int height) {
     if (!haveOptTimeData) {
         ImGui::SetCursorPos(ImVec2(plot2Pos.x - ImGui::GetWindowPos().x + 50, 
                                  plot2Pos.y - ImGui::GetWindowPos().y + plotHeight/2));
-        ImGui::Text("No optimized time history data available for slice 10.");
+        ImGui::Text("No optimized time history data available for slice %d.", selectedSlice);
     } else {
         // Calculate plot ranges for time history (optimized)
         double timeMinOpt = *std::min_element(optData.time.begin(), optData.time.end());
@@ -1434,10 +1435,10 @@ void drawTemperaturePlot(int x, int y, int width, int height) {
     ImVec2 plot3Pos = ImVec2(plot1Pos.x, plot1Pos.y + plotHeight + verticalSpacing);
     
     // Titles for bottom row
-    ImGui::Text("Final Temperature (Original) - Slice 10");
+    ImGui::Text("Final Temperature (Original) - Slice %d", selectedSlice);
     ImGui::SameLine();
     ImGui::SetCursorPosX(width/2 + 20);
-    ImGui::Text("Final Temperature (Optimized) - Slice 10");
+    ImGui::Text("Final Temperature (Optimized) - Slice %d", selectedSlice);
     
     ImGui::SetCursorPos(ImVec2(10, ImGui::GetCursorPosY() + 5));
     
@@ -1454,7 +1455,7 @@ void drawTemperaturePlot(int x, int y, int width, int height) {
     if (!haveOrigFinalData) {
         ImGui::SetCursorPos(ImVec2(plot3Pos.x - ImGui::GetWindowPos().x + 50, 
                                  plot3Pos.y - ImGui::GetWindowPos().y + plotHeight/2));
-        ImGui::Text("No original final temperature data available for slice 10.");
+        ImGui::Text("No original final temperature data available for slice %d.", selectedSlice);
     } else {
         // Calculate plot ranges for final temperature (original)
         double posMinOrig = *std::min_element(finalOrigData.positions.begin(), finalOrigData.positions.end());
@@ -1596,7 +1597,7 @@ void drawTemperaturePlot(int x, int y, int width, int height) {
     if (!haveOptFinalData) {
         ImGui::SetCursorPos(ImVec2(plot4Pos.x - ImGui::GetWindowPos().x + 50, 
                                  plot4Pos.y - ImGui::GetWindowPos().y + plotHeight/2));
-        ImGui::Text("No optimized final temperature data available for slice 10.");
+        ImGui::Text("No optimized final temperature data available for slice %d.", selectedSlice);
     } else {
         // Calculate plot ranges for final temperature (optimized)
         double posMinOpt = *std::min_element(finalOptData.positions.begin(), finalOptData.positions.end());
@@ -2276,10 +2277,18 @@ void renderVisualizationControls() {
     ImGui::Text("Target: (%.1f, %.1f, %.1f)", camTargetX, camTargetY, camTargetZ);
 
     ImGui::Separator();
-    ImGui::Text("Controls:");
-    ImGui::Text("- Left Mouse Drag: Orbit Camera");
-    ImGui::Text("- Right Mouse Drag: Pan Camera");
-    ImGui::Text("- Mouse Wheel: Zoom");
+    ImGui::Text("Slice Selection:");
+    ImGui::InputInt("Selected Slice", &selectedSlice);
+    if (ImGui::Button("Update Plot Data")) {
+        // The selectedSlice is used directly in drawTemperaturePlot, 
+        // so this button is just a visual cue for the user
+        appLog += "Updated plot data for slice " + std::to_string(selectedSlice) + "\n";
+    }
+    ImGui::SameLine();
+    ImGui::Text("(Range: 1-%d)", nSlices);
+    
+    // Ensure slice number is within valid range
+    selectedSlice = std::clamp(selectedSlice, 1, nSlices);
 
     ImGui::End();
 }
