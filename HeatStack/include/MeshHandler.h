@@ -18,9 +18,13 @@ public:
     const std::vector<std::array<float, 3>>& getVertices() const;
     const std::vector<std::array<int, 3>>& getFaces() const;
 
-    // Get mesh bounds (min/max Z values for boundary condition logic)
+    // Get mesh bounds (min/max values for each axis)
     float getMinZ() const;
     float getMaxZ() const;
+    float getMinX() const;
+    float getMaxX() const;
+    float getMinY() const;
+    float getMaxY() const;
 
 private:
     std::vector<std::array<float, 3>> vertices;
