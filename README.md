@@ -25,6 +25,7 @@ Key features include:
 
 For setup and usage instructions, see the [HeatStack README](./HeatStack/README.md).
 
+![HeatStack GUI Example](./MeshX/media/heatstack.png)
 ---
 
 ### 🧊 MeshX: 3D Mesh Processing Framework
@@ -39,6 +40,7 @@ MeshX provides a robust set of tools for working with surface and volumetric mes
 
 Detailed documentation is available in the [MeshX README](./MeshX/README.md).
 
+![MeshX GUI Example](./MeshX/media/meshX.png)
 ---
 
 ## Clone Instructions
