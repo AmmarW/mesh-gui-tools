@@ -13,13 +13,6 @@ MeshX is a powerful and versatile tool designed for handling and processing 3D s
 | Graphical User Interface (GUI)             | ![Completed](https://img.shields.io/badge/status-completed-brightgreen)  |
 | Documentation                              | ![Completed](https://img.shields.io/badge/status-completed-brightgreen)  |
 
-### Clone Instructions
-
-Make sure you clone with `--recurse-submodules` enabled to get the required libraries:
-
-```sh
-git clone --recurse-submodules link/to/repo
-```
 
 ### Build Instructions
 
@@ -36,7 +29,7 @@ cmake -S . -B build -G "Visual Studio 17 2022"
 cmake --build build --config Release
 ```
 
-The resulting executable `MeshX.exe` can be found in the `build\Release` directory.
+The resulting GUI executable `MeshX.exe` can be found in the `build\Release` directory.
 ### CGAL Setup
 
 ```sh

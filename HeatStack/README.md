@@ -1,152 +1,40 @@
-# HeatStack
+# HeatStack – 1D Composite‑Material Heat‑Equation Solver
 
-HeatStack is a computational framework designed for solving heat transfer problems efficiently. It provides tools for simulation, analysis, and visualization of heat distribution in various systems.
+HeatStack is a high‐performance 1D heat‐equation solver for composite materials under extreme, long‐duration thermal loads (inspired by NASA insulation design problems). You feed it any 3D .obj mesh, it slices it into 1D “stacks” along z, solves the transient heat equation in each stack (using BTCS or Crank–Nicholson), then runs a thermal comparator to recommend insulation thicknesses to meet your temperature criteria.
 
-## Features
+---
 
-- **Modular Design**: Easily extendable and customizable.
-- **High Performance**: Optimized for large-scale simulations.
-- **Cross-Platform**: Compatible with Windows, Linux, and macOS.
-- **Visualization Tools**: Built-in support for visualizing heat distribution.
+### Build Instructions
 
-## Project File Structure
+#### For Windows (using VS 2022):
 
-HeatStack/
+```sh
+# Navigate to the project directory
+cd CodeForces_tools
 
-├── **`include/`**: Header files for the project.
+# Generate the build files
+cmake -S . -B build -G "Visual Studio 17 2022"
 
-│   ├── BTCSMatrixSolver.h
+# Build the project
+cmake --build build --config Release
+```
 
-│   ├── BoundaryConditions.h
+The resulting GUI executable `HeatStack.exe` can be found in the `build\Release` directory.
 
-│   ├── CLI.h
+---
 
-│   ├── HeatEquationSolver.h
+## Inputs
 
-│   ├── InitialTemperature.h
+- **Mesh File**: 
+  - Any 3D mesh (automatically sliced along the Z-axis into 1D stacks).
+- **Simulation Parameters**: 
+  - Specified through the GUI: stacks, simulation time, timestep, θ, boundary conditions, and inner-surface temperature goals.
+- **Material Stacks**: 
+  - Defined in `MaterialProperties.cpp` (Could be extended to GUI)
 
-│   ├── MaterialProperties.h
+---
 
-│   ├── MeshHandler.h
+## Default Materials (Defined in `MaterialProperties.cpp`)
 
-│   ├── SafetyArbitrator.h
-
-│   ├── TemperatureComparator.h
-
-│   ├── TemperatureDistribution.h
-
-│   ├── TimeHandler.h
-
-│   ├── Utils.h
-
-├── **`src/`**: Source code implementation.
-
-│   ├── BTCSMatrixSolver.cpp
-
-│   ├── BoundaryConditions.cpp
-
-│   ├── CLI.cpp
-
-│   ├── HeatEquationSolver.cpp
-
-│   ├── InitialTemperature.cpp
-
-│   ├── MaterialProperties.cpp
-
-│   ├── MeshHandler.cpp
-
-│   ├── SafetyArbitrator.cpp
-
-│   ├── TemperatureComparator.cpp
-
-│   ├── TemperatureDistribution.cpp
-
-│   ├── TimeHandler.cpp
-
-│   ├── main.cpp
-
-│   ├── main_gui.cpp
-
-├── **`tests/`**: Unit tests for the project.
-
-│   ├── test_boundary_conditions.cpp
-
-│   ├── test_humanoid_mesh.cpp
-
-│   ├── test_main.cpp
-
-│   ├── test_material_properties.cpp
-
-│   ├── test_heat_equation_solver.cpp
-
-│   ├── CMakeLists.txt
-
-├── .gitignore
-
-├── README.md
-
-├── **`build/`**: Build files and compiled binaries.
-
-
-## Project Workflow
-
-### Inputs
-- Mesh file (.obj): Robot surface mesh in .obj format, processed by MeshHandler.
-
-- Stack configuration (via MaterialProperties): Each stack (TPS, carbon-fiber, glue, steel) has varying thicknesses based on l/L (head to toe, L=2.5m).
-
-- Boundary conditions:
-    - Dirichlet (exhaust gas temperature at time=0) on TPS surface
-    - Neumann (zero flux) on steel surface.
-
-
-- Initial Conditions:
-  
-    - Initial temperature of Humanoid: 300K (room temperature) for all stacks and materials
-    - Initial external temperature profile head to toe (via MaterialProperties) 
-
-- Simulation Parameters: 
-
-    - Simulation durations: 1, 3, 7 hours.
-    - Grid Spacing: Non-uniform across stacks - 10 grid points distributed uniformly per material.
-    - Time Step Size: Adaptive (while satisfying CFL stability and error criteria)
-
-
-### Goals: 
-- Solve 1D-Heat Equation (vis Theta-Method)
-    - Via BTCS (theta = 0.5)  or Crank Nicholson Schemes (theta = 1)
-    - Tridiagonal matrix inversion 
-
-- Minimize TPS thickness to ensure survivability via temperature checks:
-    - Steel < 800K, Glue < 400K and Carbon-fiber < 350K
-
-
-### Outputs
-
-- Temperature distributions across stack depth as a function of simulation time
-- TPS thickness profile
-
-
-## Getting Started
-
-### Prerequisites
-
-- C++ compiler (e.g., GCC, Clang, or MSVC)
-- CMake (version 3.10 or higher)
-
-### Building the Project
-
-1. Clone the repository and build in root of HeatStack:
-    ```sh
-     # build using VS (version)
-     cmake -S . -B build -G "Visual Studio 17 2022"
-
-
-
-- Work divide:
-
-Ammar - BTCSMatrixSolver.cpp, HeatEquationSolver.cpp
-Jasdeep - MeshHandler.cpp, BoundaryCondition.cpp
-Harsh - main.cpp, CLI.cpp, TimeHandler.cpp
-Shivam - InitialTemperature.cpp, TemperatureDistribution.cpp
-Mohini - TemperatureComparator.cpp, HeatEquationSolver.cpp
+- **Insulation Material**: Requires thermal conductivity (W/m·K), density (kg/m³), and specific heat capacity (J/kg·K). Example: A low-conductivity material suitable for thermal protection systems (TPS).
+- **Composite Material Layers**: Each layer requires thermal conductivity (W/m·K), density (kg/m³), and specific heat capacity (J/kg·K). Examples include high-conductivity materials like carbon fiber, adhesives like glue, or structural metals like steel.

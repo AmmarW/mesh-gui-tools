@@ -1,51 +1,43 @@
-### MEEN-689: Applied Computing Concepts (Spring 2025)
+# Repository Overview
 
-#### Team Members
-- Ammar Waheed
-- Harsh Mittal
-- Jasdeep Bajaj
-- Mohini Priya Kolluri
-- Shivam Vashi
+This repository hosts the source code and documentation for two software applications developed as part of the **MEEN-689: Applied Computing Concepts** course at Texas A&M University (Spring 2025):
 
+- **HeatStack** – A thermal simulation and analysis toolkit.
+- **MeshX** – A comprehensive 3D mesh processing platform.
 
-## Repository Overview
-
-This repository contains two main projects:
-
-1. **HeatStack**: A thermal simulation and analysis tool.
-2. **MeshX**: A mesh processing and manipulation tool.
-
-Each project has its own dedicated README file with detailed instructions and documentation.
+Each application is contained in its own directory and includes a dedicated README with build instructions, usage examples, and technical documentation.
 
 ---
 
-## HeatStack Project
+## Applications
 
-### Description
+### 🔥 HeatStack: 1D Composite-Material Heat-Equation Solver
 
-HeatStack is a thermal simulation tool designed to analyze heat transfer in complex systems. It supports features such as:
+HeatStack is a high-performance tool designed to solve the 1D transient heat equation for composite materials under extreme, long-duration thermal loads. Inspired by NASA insulation design challenges, it processes any 3D mesh by slicing it into 1D stacks along the Z-axis, solving the heat equation for each stack using advanced numerical methods (BTCS or Crank–Nicholson). HeatStack also includes a thermal comparator to recommend optimal insulation thicknesses based on user-defined temperature criteria.
 
-- Thermal simulation for steady-state and transient conditions.
-- Material property customization.
-- Visualization of temperature distribution.
+Key features include:
 
-For more details, refer to the [HeatStack README](./HeatStack/README.md).
+- Automatic slicing of 3D meshes into 1D stacks for simulation.
+- Configurable simulation parameters, including boundary conditions and material properties.
+- Support for composite material layers with customizable thermal properties.
+- Recommendations for insulation thickness to meet thermal performance goals.
+
+
+For setup and usage instructions, see the [HeatStack README](./HeatStack/README.md).
 
 ---
 
-## MeshX Project
+### 🧊 MeshX: 3D Mesh Processing Framework
 
-### Description
+MeshX provides a robust set of tools for working with surface and volumetric meshes. Designed with extensibility and usability in mind, it includes:
 
-MeshX is a mesh processing tool that provides advanced capabilities for handling and manipulating 3D meshes. It supports:
+- Support for common mesh file formats (import/export).
+- Mesh transformations: translation, rotation, and scaling.
+- Boolean operations: union, intersection, difference.
+- Volume mesh generation from surface geometry.
+- An intuitive GUI for user interaction.
 
-- Surface mesh import/export handling.
-- Mesh validation and transformations (translation, rotation, scaling).
-- Boolean operations (union, intersection, difference).
-- Volume mesh generation.
-- A graphical user interface (GUI) for ease of use.
-
-For more details, refer to the [MeshX README](./MeshX/README.md).
+Detailed documentation is available in the [MeshX README](./MeshX/README.md).
 
 ---
 
@@ -58,3 +50,7 @@ git clone --recurse-submodules link/to/repo
 ```
 
 ---
+
+## License
+
+This project is licensed under the terms of the [MIT License](./LICENSE).

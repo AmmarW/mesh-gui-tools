@@ -18,11 +18,11 @@ include_directories(
     ../third-party/imgui
     ../third-party/imgui/backends
     ../third-party/tinyfiledialogs
-    # C:/vcpkg/installed/x64-windows/include  # ❓ COMMENT THIS unless CMake fails to find something automatically
+    # C:/vcpkg/installed/x64-windows/include  # COMMENT THIS unless CMake fails to find something automatically
 )
 
 # --- Add subdirectory for third-party GLFW only if you are manually building glfw ---
-add_subdirectory(../third-party/glfw ../build/third-party/glfw)  # ❓ COMMENT THIS if using vcpkg glfw
+add_subdirectory(../third-party/glfw ../build/third-party/glfw)  # COMMENT THIS if using vcpkg glfw
 
 # ImGui sources
 set(IMGUI_SRC
@@ -36,8 +36,8 @@ set(IMGUI_SRC
 
 # --- Executable ---
 add_executable(HeatStackGUI
-    # src/main.cpp   # ❌ COMMENT OUT: Old CLI main. Causes conflict with GUI
-    src/main_gui.cpp  # ✅ New main for GUI
+    # src/main.cpp   # Old CLI main
+    src/main_gui.cpp  # New main for GUI
     src/BoundaryConditions.cpp
     src/BTCSMatrixSolver.cpp
     src/CLI.cpp
@@ -50,7 +50,7 @@ add_executable(HeatStackGUI
     src/TemperatureDistribution.cpp
     src/TimeHandler.cpp
     ${IMGUI_SRC}
-    ../third-party/tinyfiledialogs/tinyfiledialogs.c   # ✅ Added for file dialogs
+    ../third-party/tinyfiledialogs/tinyfiledialogs.c
 )
 
 # --- Link Libraries ---
